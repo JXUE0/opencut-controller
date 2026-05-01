@@ -5,6 +5,14 @@
   "description": "Professional MCP server for video editing automation with OpenCut",
   "license": "MIT",
   "author": "JXUE0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JXUE0/opencut-controller.git"
+  },
+  "bugs": {
+    "url": "https://github.com/JXUE0/opencut-controller/issues"
+  },
+  "homepage": "https://github.com/JXUE0/opencut-controller#readme",
   "keywords": [
     "mcp",
     "model-context-protocol",
