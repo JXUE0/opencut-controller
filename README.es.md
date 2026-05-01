@@ -8,6 +8,7 @@
 
 
 [![Model Context Protocol](https://img.shields.io/badge/MCP-1.29.0-blue)](https://modelcontextprotocol.io/)
+[![npm version](https://img.shields.io/npm/v/opencut-controller.svg)](https://www.npmjs.com/package/opencut-controller)
 [![Bun](https://img.shields.io/badge/Bun-%E2%89%A51.3-black)](https://bun.sh/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -44,8 +45,8 @@ Asegúrate de tener [Bun](https://bun.sh/) instalado en tu sistema.
 
 ```bash
 # Clona el repositorio
-git clone https://github.com/JXUE0/opencut-controller-MCP.git
-cd opencut-controller-MCP
+git clone https://github.com/JXUE0/opencut-controller.git
+cd opencut-controller
 
 # Instala las dependencias (el navegador de Playwright se instalará automáticamente)
 bun install
@@ -119,8 +120,7 @@ Plantillas de inicio rápido para acciones complejas:
 
 ## 🔌 Integración con Claude Desktop
 
-> [!IMPORTANT]
-> Asegúrate de reemplazar `/ruta/absoluta/a/opencut-controller-MCP` con la ruta de la carpeta real en tu computadora.
+> Asegúrate de reemplazar `/ruta/absoluta/a/opencut-controller` con la ruta de la carpeta real en tu computadora.
 
 Para conectar OpenCut Controller a tu aplicación local de Claude Desktop, añade lo siguiente a tu `claude_desktop_config.json`:
 
@@ -130,7 +130,7 @@ Para conectar OpenCut Controller a tu aplicación local de Claude Desktop, añad
     "opencut-controller": {
       "command": "bun",
       "args": ["run", "src/index.ts"],
-      "cwd": "/ruta/absoluta/a/opencut-controller-MCP"
+      "cwd": "/ruta/absoluta/a/opencut-controller"
     }
   }
 }
