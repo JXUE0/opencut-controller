@@ -1,6 +1,6 @@
 {
   "name": "opencut-controller",
-  "version": "1.29.2",
+  "version": "1.29.3",
   "mcpName": "OpenCut Controller",
   "description": "Professional MCP server for video editing automation with OpenCut",
   "license": "MIT",

@@ -47,6 +47,9 @@ jobs:
           name: dist
           path: dist/
 
+      - name: Install dependencies
+        run: bun install
+
       - name: Publish to npm
         run: bun publish --no-git-checks --provenance --access public
         # No se necesita NODE_AUTH_TOKEN cuando usas Trusted Publishing (OIDC)
