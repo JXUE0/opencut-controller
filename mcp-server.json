@@ -6,12 +6,12 @@
     "url": "https://github.com/JXUE0/opencut-controller",
     "source": "github"
   },
-  "version": "1.29.0",
+  "version": "1.29.2",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "opencut-controller",
-      "version": "1.29.0",
+      "version": "1.29.2",
       "transport": {
         "type": "stdio"
       }
