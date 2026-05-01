@@ -4,7 +4,8 @@
 [![Bun](https://img.shields.io/badge/Bun-%E2%89%A51.3-black)](https://bun.sh/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**OpenCut Controller** es un robusto servidor basado en el [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) diseñado para automatizar y controlar de forma total el [Editor de Video OpenCut](https://opencut.io) directamente desde modelos de Inteligencia Artificial (como Claude, o agentes dentro de n8n).
+> [!NOTE]
+> **OpenCut Controller** es un robusto servidor basado en el [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) diseñado para automatizar y controlar de forma total el [Editor de Video OpenCut](https://opencut.io) directamente desde modelos de Inteligencia Artificial (como Claude, o agentes dentro de n8n).
 
 Al utilizar **Playwright** en segundo plano, este servidor se inyecta de forma fluida en el entorno del navegador de OpenCut. Esto otorga a los LLMs acceso programático para manipular la línea de tiempo, escenas, recursos multimedia y el motor de renderizado—convirtiendo efectivamente a OpenCut en una poderosa herramienta de edición de video autónoma impulsada por IA.
 
@@ -31,6 +32,9 @@ cd opencut-controller-MCP
 bun install
 ```
 
+> [!TIP]
+> El comando `bun install` ejecutará automáticamente un script `postinstall` para descargar los binarios necesarios de Chromium para Playwright. ¡No se necesita configuración manual del navegador!
+
 ## 💻 Modo de Uso
 
 El servidor puede iniciarse utilizando dos protocolos de transporte distintos, dependiendo del entorno de tu cliente.
@@ -44,6 +48,9 @@ bun run src/index.ts
 
 ### 2. Transporte `HTTP` (Streamable)
 Ideal para integrar con herramientas de flujo de trabajo externas como n8n o servicios remotos. El servidor escuchará en `http://localhost:3002/mcp`.
+
+> [!WARNING]
+> La sintaxis para establecer variables de entorno cambia según tu sistema operativo. Asegúrate de usar el comando correcto a continuación para evitar errores en la terminal.
 
 **Linux / macOS (Bash):**
 ```bash
@@ -93,6 +100,9 @@ Plantillas de inicio rápido para acciones complejas:
 
 ## 🔌 Integración con Claude Desktop
 
+> [!IMPORTANT]
+> Asegúrate de reemplazar `/ruta/absoluta/a/opencut-controller-MCP` con la ruta de la carpeta real en tu computadora.
+
 Para conectar OpenCut Controller a tu aplicación local de Claude Desktop, añade lo siguiente a tu `claude_desktop_config.json`:
 
 ```json
@@ -112,6 +122,9 @@ Para conectar OpenCut Controller a tu aplicación local de Claude Desktop, añad
 - **"Playwright browser not found"**: Asegúrate de que el comando `postinstall` se ejecutó correctamente. Puedes lanzarlo manualmente con `bun run playwright install chromium`.
 - **"PowerShell: The term 'TRANSPORT_TYPE=http' is not recognized"**: Estás usando la sintaxis de Bash en Windows. Utiliza `$env:TRANSPORT_TYPE="http"; bun run src/index.ts` en su lugar.
 - **Connection Refused**: Asegúrate de que el editor de OpenCut esté accesible para que Playwright se conecte.
+
+> [!TIP]
+> Si encuentras errores de TypeScript durante el desarrollo, puedes verificar los tipos localmente ejecutando `bun run build` (el cual ejecuta `tsc --noEmit`).
 
 ## 📄 Licencia
 Este proyecto está bajo la Licencia MIT.
