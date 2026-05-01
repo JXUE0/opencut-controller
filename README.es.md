@@ -1,5 +1,7 @@
 # 🎬 OpenCut Controller (Servidor MCP)
 
+🌐 **Read in English: [README.md](./README.md)**
+
 [![Model Context Protocol](https://img.shields.io/badge/MCP-1.29.0-blue)](https://modelcontextprotocol.io/)
 [![Bun](https://img.shields.io/badge/Bun-%E2%89%A51.3-black)](https://bun.sh/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -126,7 +128,27 @@ Para conectar OpenCut Controller a tu aplicación local de Claude Desktop, añad
 > [!TIP]
 > Si encuentras errores de TypeScript durante el desarrollo, puedes verificar los tipos localmente ejecutando `bun run build` (el cual ejecuta `tsc --noEmit`).
 
-## 🙌 Agradecimientos / Créditos
+## 🛠 Solución de Problemas (Troubleshooting)
+
+### 1. Error: `window.__opencut is undefined`
+**Causa**: Estás intentando usar el servidor MCP con la web pública (`opencut.app`).
+**Solución**: Debes ejecutar el editor de OpenCut localmente. El sitio público no expone los "hooks" internos necesarios para el control MCP por seguridad.
+
+### 2. Error: `Incompatible React versions`
+**Causa**: Las versiones de `react` y `react-dom` no coinciden en el monorepo.
+**Solución**: Asegúrate de que ambas tengan la misma versión exacta (ej. `19.0.0`) en el `package.json` raíz y ejecuta `bun install`.
+
+### 3. Error: `Invalid input: expected string, received undefined` (Error de Zod)
+**Causa**: Faltan variables de entorno en `apps/web/.env`.
+**Solución**: Asegúrate de tener un archivo `.env` en `apps/web/`. Hemos actualizado el código para que la mayoría sean opcionales, pero `BETTER_AUTH_SECRET` podría seguir siendo necesario.
+
+### 4. Tiempo de espera agotado (Connection Timeout)
+**Causa**: El servidor local de OpenCut (Next.js) aún se está compilando.
+**Solución**: Espera a ver el mensaje `✓ Ready` en la terminal del editor antes de iniciar el servidor MCP.
+
+---
+
+## 📄 Créditos y Agradecimientos
 
 El código original y el concepto de este proyecto se inspiraron en el trabajo base realizado en [RavenMeld/OpenCut-MCP](https://github.com/RavenMeld/OpenCut-MCP). Extendemos nuestro más sincero agradecimiento a RavenMeld por su trabajo pionero al conectar OpenCut a través del Model Context Protocol.
 

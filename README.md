@@ -1,5 +1,7 @@
 # 🎬 OpenCut Controller (MCP Server)
 
+🌐 **Leer en Español: [README.es.md](./README.es.md)**
+
 [![Model Context Protocol](https://img.shields.io/badge/MCP-1.29.0-blue)](https://modelcontextprotocol.io/)
 [![Bun](https://img.shields.io/badge/Bun-%E2%89%A51.3-black)](https://bun.sh/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -126,7 +128,27 @@ To connect OpenCut Controller to your local Claude Desktop app, add the followin
 > [!TIP]
 > If you encounter TypeScript errors during development or execution, you can verify your types locally by running `bun run build` (which executes `tsc --noEmit`).
 
-## 🙌 Acknowledgments
+## 🛠 Troubleshooting (Solución de problemas)
+
+### 1. Error: `window.__opencut is undefined`
+**Cause**: You are trying to use the MCP server with the production web app (`opencut.app`).
+**Fix**: You must run the OpenCut editor locally. The production site doesn't expose the internal hooks required for MCP control.
+
+### 2. Error: `Incompatible React versions`
+**Cause**: `react` and `react-dom` versions mismatch in the monorepo.
+**Fix**: Ensure both are set to the exact same version (e.g., `19.0.0`) in the root `package.json` and run `bun install`.
+
+### 3. Error: `Invalid input: expected string, received undefined` (Zod Error)
+**Cause**: Missing environment variables in `apps/web/.env`.
+**Fix**: Ensure you have a `.env` file in `apps/web/`. We have updated the code to make most variables optional, but `BETTER_AUTH_SECRET` may still be needed for some features.
+
+### 4. Connection Timeout
+**Cause**: The local OpenCut server (Next.js) is still compiling.
+**Fix**: Wait until you see `✓ Ready` in the editor terminal before starting the MCP server.
+
+---
+
+## 📄 Credits & Acknowledgments
 
 This project's original codebase and concept were inspired by and built upon the foundational work done in [RavenMeld/OpenCut-MCP](https://github.com/RavenMeld/OpenCut-MCP). We extend our sincere gratitude to RavenMeld for their pioneering work on connecting OpenCut via the Model Context Protocol.
 
