@@ -126,5 +126,9 @@ To connect OpenCut Controller to your local Claude Desktop app, add the followin
 > [!TIP]
 > If you encounter TypeScript errors during development or execution, you can verify your types locally by running `bun run build` (which executes `tsc --noEmit`).
 
+## 🙌 Acknowledgments
+
+This project's original codebase and concept were inspired by and built upon the foundational work done in [RavenMeld/OpenCut-MCP](https://github.com/RavenMeld/OpenCut-MCP). We extend our sincere gratitude to RavenMeld for their pioneering work on connecting OpenCut via the Model Context Protocol.
+
 ## 📄 License
 This project is licensed under the MIT License.

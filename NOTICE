@@ -18,3 +18,8 @@ MIT License:
 
 This NOTICE file is provided in accordance with the Apache License 2.0
 requirements for redistribution of software containing Apache-2.0 licensed components.
+
+---
+
+### Acknowledgments
+This project was inspired by and built upon the conceptual foundations of the [OpenCut-MCP](https://github.com/RavenMeld/OpenCut-MCP) repository created by [RavenMeld](https://github.com/RavenMeld). We acknowledge and thank them for their pioneering open-source work.
