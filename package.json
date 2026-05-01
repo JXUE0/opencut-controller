@@ -3,6 +3,9 @@
   "module": "src/index.ts",
   "type": "module",
   "private": true,
+  "scripts": {
+    "postinstall": "playwright install chromium"
+  },
   "devDependencies": {
     "@types/bun": "latest",
     "typescript": "^6.0.3"
