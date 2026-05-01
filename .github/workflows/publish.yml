@@ -45,8 +45,5 @@ jobs:
           path: dist/
 
       - name: Publish to npm
-        run: bun publish --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }} # Aunque uses Trusted Publishing, a veces Bun prefiere token o configuración de OIDC específica.
-          # Para OIDC puro con npm (Trusted Publishing), se usa:
-          # npm publish --provenance --access public
+        run: bun publish --no-git-checks --provenance --access public
+        # No se necesita NODE_AUTH_TOKEN cuando usas Trusted Publishing (OIDC)
