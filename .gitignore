@@ -47,3 +47,7 @@ Desktop.ini
 *.spec.ts
 __tests__/
 
+
+# MCP tools
+mcp-publisher.exe
+mcp-publisher.tar.gz
