@@ -1,13 +1,40 @@
 {
   "name": "opencut-controller",
-  "module": "src/index.ts",
-  "type": "module",
-  "private": true,
+  "version": "1.29.0",
+  "mcpName": "OpenCut Controller",
+  "description": "Professional MCP server for video editing automation with OpenCut",
+  "license": "MIT",
+  "author": "JXUE0",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "video-editing",
+    "opencut",
+    "automation",
+    "playwright"
+  ],
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "bin": {
+    "opencut-controller": "./dist/index.mjs"
+  },
+  "files": [
+    "dist",
+    "assets",
+    "scripts",
+    "mcp-server.json",
+    "README.md",
+    "README.es.md"
+  ],
   "scripts": {
-    "postinstall": "playwright install chromium"
+    "build": "tsup src/index.ts --format esm --clean --minify --dts",
+    "dev": "tsup src/index.ts --format esm --watch",
+    "postinstall": "playwright install chromium",
+    "prepublishOnly": "npm run build"
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "tsup": "^8.4.0",
     "typescript": "^6.0.3"
   },
   "peerDependencies": {
