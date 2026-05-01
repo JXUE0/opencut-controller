@@ -1,6 +1,11 @@
+<p align="center">
+  <img src="assets/logo.png" width="150" alt="OpenCut Controller Logo">
+</p>
+
 # 🎬 OpenCut Controller (MCP Server)
 
 🌐 **Leer en Español: [README.es.md](./README.es.md)**
+
 
 [![Model Context Protocol](https://img.shields.io/badge/MCP-1.29.0-blue)](https://modelcontextprotocol.io/)
 [![Bun](https://img.shields.io/badge/Bun-%E2%89%A51.3-black)](https://bun.sh/)
@@ -32,6 +37,15 @@ cd opencut-controller-MCP
 
 # Install dependencies (Playwright browsers will install automatically)
 bun install
+
+# 3. Patch the Local Editor:
+# To enable MCP control, you need to apply small patches to the OpenCut source code. We provide an automated script for this:
+bun run scripts/patch-editor.ts ../path-to-opencut
+
+# 4. Install & Run Editor:
+cd ../path-to-opencut
+bun install
+bun dev:web
 ```
 
 > [!TIP]

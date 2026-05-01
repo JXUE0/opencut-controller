@@ -1,6 +1,11 @@
+<p align="center">
+  <img src="assets/logo.png" width="150" alt="OpenCut Controller Logo">
+</p>
+
 # 🎬 OpenCut Controller (Servidor MCP)
 
 🌐 **Read in English: [README.md](./README.md)**
+
 
 [![Model Context Protocol](https://img.shields.io/badge/MCP-1.29.0-blue)](https://modelcontextprotocol.io/)
 [![Bun](https://img.shields.io/badge/Bun-%E2%89%A51.3-black)](https://bun.sh/)
@@ -17,7 +22,19 @@ Al utilizar **Playwright** en segundo plano, este servidor se inyecta de forma f
 
 - **161 Herramientas MCP**: Control programático exhaustivo sobre las capacidades principales de edición de OpenCut.
 - **Soporte de Transporte Dual**: Conéctate localmente mediante `stdio` (por defecto) o intégralo remotamente a través de `HTTP Streamable`.
-- **Integración con Playwright**: Se conecta directamente a la interfaz web de OpenCut para manipular el estado de la aplicación en tiempo real.
+- **Parchear el Editor Local**:
+   Para habilitar el control MCP, necesitas aplicar pequeños parches al código fuente de OpenCut. Proporcionamos un script automatizado para esto:
+   ```bash
+   bun run scripts/patch-editor.ts ../ruta-a-opencut
+   ```
+
+- **Instalar e Iniciar el Editor**:
+   ```bash
+   cd ../ruta-a-opencut
+   bun install
+   bun dev:web
+   ```
+para manipular el estado de la aplicación en tiempo real.
 - **Recursos Contextuales**: Inspecciona en vivo el estado del editor, los proyectos actuales y las pistas en la línea de tiempo.
 - **Prompts MCP Predefinidos**: Plantillas listas para usar en tareas de edición complejas.
 
