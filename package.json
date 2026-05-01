@@ -1,7 +1,7 @@
 {
   "name": "opencut-controller",
-  "version": "1.29.9",
-  "mcpName": "io.github.jxue0/opencut-controller",
+  "version": "1.30.0",
+  "mcpName": "io.github.JXUE0/opencut-controller",
   "description": "Professional MCP server for video editing automation with OpenCut",
   "license": "MIT",
   "author": "JXUE0",
