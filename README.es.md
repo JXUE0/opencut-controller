@@ -9,7 +9,7 @@
 
 [![Model Context Protocol](https://img.shields.io/badge/MCP-1.29.0-blue)](https://modelcontextprotocol.io/)
 [![npm version](https://img.shields.io/npm/v/opencut-controller.svg)](https://www.npmjs.com/package/opencut-controller)
-[![Bun](https://img.shields.io/badge/Bun-%E2%89%A51.3-black)](https://bun.sh/)
+[![pnpm](https://img.shields.io/badge/pnpm-9.x-orange)](https://pnpm.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 > [!NOTE]
@@ -23,68 +23,85 @@ Al utilizar **Playwright** en segundo plano, este servidor se inyecta de forma f
 
 - **161 Herramientas MCP**: Control programático exhaustivo sobre las capacidades principales de edición de OpenCut.
 - **Soporte de Transporte Dual**: Conéctate localmente mediante `stdio` (por defecto) o intégralo remotamente a través de `HTTP Streamable`.
-- **Parchear el Editor Local**:
-   Para habilitar el control MCP, necesitas aplicar pequeños parches al código fuente de OpenCut. Proporcionamos un script automatizado para esto:
-   ```bash
-   bun run scripts/patch-editor.ts ../ruta-a-opencut
-   ```
-
-- **Instalar e Iniciar el Editor**:
-   ```bash
-   cd ../ruta-a-opencut
-   bun install
-   bun dev:web
-   ```
-para manipular el estado de la aplicación en tiempo real.
+- **Integración con Playwright**: Se conecta directamente a la interfaz web de OpenCut para manipular el estado de la aplicación en tiempo real.
 - **Recursos Contextuales**: Inspecciona en vivo el estado del editor, los proyectos actuales y las pistas en la línea de tiempo.
 - **Prompts MCP Predefinidos**: Plantillas listas para usar en tareas de edición complejas.
 
 ## 🚀 Instalación
 
-Asegúrate de tener [Bun](https://bun.sh/) instalado en tu sistema.
+Asegúrate de tener [pnpm](https://pnpm.io/) (o Bun) instalado en tu sistema.
+
+> [!IMPORTANT]
+> **OpenCut Controller requiere el OpenCut Legacy (Next.js App Router)** — la versión con editor completo, línea de tiempo y stores.
+> El repo público actual (`OpenCut-app/OpenCut`) es un *rewrite* incompleto (Vite + TanStack Router).
+> **Usa el repo legacy archivado:** [`OpenCut-app/opencut-classic`](https://github.com/OpenCut-app/opencut-classic)
 
 ```bash
-# Clona el repositorio
+# 1. Clona el editor legacy de OpenCut (requerido para que el MCP funcione)
+git clone https://github.com/OpenCut-app/opencut-classic.git
+cd opencut-classic
+
+# 2. Clona este controlador MCP
+cd ..
 git clone https://github.com/JXUE0/opencut-controller.git
 cd opencut-controller
 
-# Instala las dependencias (el navegador de Playwright se instalará automáticamente)
-bun install
+# 3. Instala dependencias (Playwright Chromium se instala automático)
+pnpm install
+
+# 4. Parchear el Editor Local:
+# Para habilitar el control MCP, necesitas aplicar pequeños parches al código fuente de OpenCut.
+# Proporcionamos un script automatizado para esto:
+pnpm run patch-editor ../opencut-classic
+
+# 5. Instalar e Iniciar Editor:
+cd ../opencut-classic
+pnpm install
+pnpm dev:web
 ```
 
 > [!TIP]
-> El comando `bun install` ejecutará automáticamente un script `postinstall` para descargar los binarios necesarios de Chromium para Playwright. ¡No se necesita configuración manual del navegador!
+> El comando `pnpm install` ejecutará automáticamente un script `postinstall` para descargar los binarios necesarios de Chromium para Playwright. ¡No se necesita configuración manual del navegador!
 
 ## 💻 Modo de Uso
 
-El servidor puede iniciarse utilizando dos protocolos de transporte distintos, dependiendo del entorno de tu cliente.
+El servidor puede iniciarse utilizando dos protocolos de transporte distintos, dependiendo de tu entorno de cliente.
 
 ### 1. Transporte `stdio` (Predeterminado)
 Ideal para clientes MCP locales estándar como Claude Desktop.
 
 ```bash
-bun run src/index.ts
+pnpm run src/index.ts
 ```
 
 ### 2. Transporte `HTTP` (Streamable)
-Ideal para integrar con herramientas de flujo de trabajo externas como n8n o servicios remotos. El servidor escuchará en `http://localhost:3002/mcp`.
+Ideal para integrar con herramientas de flujo de trabajo externas como n8n o servicios remotos. El servidor escucha en `http://localhost:3002/mcp`.
 
 > [!WARNING]
-> La sintaxis para establecer variables de entorno cambia según tu sistema operativo. Asegúrate de usar el comando correcto a continuación para evitar errores en la terminal.
+> La sintaxis para variables de entorno cambia según tu sistema operativo. Asegúrate de usar el comando correcto a continuación para evitar errores.
 
 **Linux / macOS (Bash):**
 ```bash
-TRANSPORT_TYPE=http PORT=3002 bun run src/index.ts
+TRANSPORT_TYPE=http PORT=3002 pnpm run src/index.ts
 ```
 
 **Windows (PowerShell):**
 ```powershell
-$env:TRANSPORT_TYPE="http"; $env:PORT="3002"; bun run src/index.ts
+$env:TRANSPORT_TYPE="http"; $env:PORT="3002"; pnpm run src/index.ts
 ```
+
+### 3. HTTP con Autenticación
+Para acceso remoto seguro, establece un token bearer:
+
+```bash
+MCP_AUTH_TOKEN=tu-token-seguro TRANSPORT_TYPE=http PORT=3002 pnpm run src/index.ts
+```
+
+Luego incluye `Authorization: Bearer tu-token-seguro` en las peticiones.
 
 ## 🛠️ Herramientas MCP Disponibles (161)
 
-El controlador expone 161 herramientas altamente detalladas al LLM, categorizadas de la siguiente manera:
+El controlador expone 161 herramientas altamente granulares al LLM, categorizadas de la siguiente manera:
 
 | Categoría | Herramientas | Descripción |
 |-----------|--------------|-------------|
@@ -120,7 +137,7 @@ Plantillas de inicio rápido para acciones complejas:
 
 ## 🔌 Integración con Claude Desktop
 
-> Asegúrate de reemplazar `/ruta/absoluta/a/opencut-controller` con la ruta de la carpeta real en tu computadora.
+> Asegúrate de reemplazar `/ruta/absoluta/a/opencut-controller` con la ruta real en tu máquina local.
 
 Para conectar OpenCut Controller a tu aplicación local de Claude Desktop, añade lo siguiente a tu `claude_desktop_config.json`:
 
@@ -128,7 +145,7 @@ Para conectar OpenCut Controller a tu aplicación local de Claude Desktop, añad
 {
   "mcpServers": {
     "opencut-controller": {
-      "command": "bun",
+      "command": "pnpm",
       "args": ["run", "src/index.ts"],
       "cwd": "/ruta/absoluta/a/opencut-controller"
     }
@@ -138,12 +155,12 @@ Para conectar OpenCut Controller a tu aplicación local de Claude Desktop, añad
 
 ## ⚠️ Solución de Problemas
 
-- **"Playwright browser not found"**: Asegúrate de que el comando `postinstall` se ejecutó correctamente. Puedes lanzarlo manualmente con `bun run playwright install chromium`.
-- **"PowerShell: The term 'TRANSPORT_TYPE=http' is not recognized"**: Estás usando la sintaxis de Bash en Windows. Utiliza `$env:TRANSPORT_TYPE="http"; bun run src/index.ts` en su lugar.
-- **Connection Refused**: Asegúrate de que el editor de OpenCut esté accesible para que Playwright se conecte.
+- **"Playwright browser not found"**: Asegúrate de que el comando `postinstall` se ejecutó correctamente. Puedes lanzarlo manualmente con `pnpm run playwright install chromium`.
+- **"PowerShell: The term 'TRANSPORT_TYPE=http' is not recognized"**: Estás usando sintaxis de Bash en Windows. Usa `$env:TRANSPORT_TYPE="http"; pnpm run src/index.ts` en su lugar.
+- **Connection Refused**: Asegúrate de que OpenCut esté abierto y accesible para Playwright.
 
 > [!TIP]
-> Si encuentras errores de TypeScript durante el desarrollo, puedes verificar los tipos localmente ejecutando `bun run build` (el cual ejecuta `tsc --noEmit`).
+> Si encuentras errores de TypeScript durante el desarrollo, puedes verificar los tipos localmente ejecutando `pnpm run build` (que ejecuta `tsc --noEmit`).
 
 ## 🛠 Solución de Problemas (Troubleshooting)
 
@@ -153,7 +170,7 @@ Para conectar OpenCut Controller a tu aplicación local de Claude Desktop, añad
 
 ### 2. Error: `Incompatible React versions`
 **Causa**: Las versiones de `react` y `react-dom` no coinciden en el monorepo.
-**Solución**: Asegúrate de que ambas tengan la misma versión exacta (ej. `19.0.0`) en el `package.json` raíz y ejecuta `bun install`.
+**Solución**: Asegúrate de que ambas tengan la misma versión exacta (ej. `19.2.0`) en el `package.json` raíz y ejecuta `pnpm install`.
 
 ### 3. Error: `Invalid input: expected string, received undefined` (Error de Zod)
 **Causa**: Faltan variables de entorno en `apps/web/.env`.
