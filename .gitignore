@@ -9,8 +9,8 @@ dist/
 # code coverage
 coverage/
 *.lcov
-.swarm
-.opencode
+.swarm/
+.opencode/
 
 # logs
 logs/
