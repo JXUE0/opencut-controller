@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "scanned_at": "2026-07-19T03:53:37.650Z",
+  "scanned_at": "2026-07-19T04:52:36.843Z",
   "files": [
     {
       "path": ".github\\workflows\\publish.yml",
@@ -13,8 +13,8 @@
       "path": "README.md",
       "title": "🎬 OpenCut Controller (MCP Server)",
       "summary": "<p align=\"center\"> <img src=\"assets/logo.png\" width=\"150\" alt=\"OpenCut Controller Logo\"> </p> 🌐 **Leer en Español: [README.es.md](./README.es.md)** [![Model Context Protocol](https://img.shields.i...",
-      "lines": 171,
-      "mtime": 1777656536424.7136
+      "lines": 191,
+      "mtime": 1784436750897.3186
     }
   ]
 }

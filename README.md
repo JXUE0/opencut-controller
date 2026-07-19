@@ -9,11 +9,11 @@
 
 [![Model Context Protocol](https://img.shields.io/badge/MCP-1.29.0-blue)](https://modelcontextprotocol.io/)
 [![npm version](https://img.shields.io/npm/v/opencut-controller.svg)](https://www.npmjs.com/package/opencut-controller)
-[![Bun](https://img.shields.io/badge/Bun-%E2%89%A51.3-black)](https://bun.sh/)
+[![pnpm](https://img.shields.io/badge/pnpm-9.x-orange)](https://pnpm.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 > [!NOTE]
-> **OpenCut Controller** is a robust [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server designed to fully automate and control the [OpenCut Video Editor](https://opencut.io) directly from AI models (like Claude or agents inside n8n). 
+> **OpenCut Controller** is a robust [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server designed to fully automate and control the [OpenCut Video Editor](https://opencut.app/) directly from AI models (like Claude or agents inside n8n). 
 
 By leveraging **Playwright** under the hood, this server seamlessly injects into the OpenCut browser environment, granting LLMs programmatic access to manipulate the timeline, scenes, media assets, rendering engine, and more—effectively turning OpenCut into an AI-driven, headless video editing powerhouse.
 
@@ -29,28 +29,39 @@ By leveraging **Playwright** under the hood, this server seamlessly injects into
 
 ## 🚀 Installation
 
-Ensure you have [Bun](https://bun.sh/) installed on your system.
+Ensure you have [pnpm](https://pnpm.io/) (or Bun) installed on your system.
+
+> [!IMPORTANT]
+> **OpenCut Controller requires the Legacy OpenCut (Next.js App Router)** — the version with a complete editor, timeline, and stores.
+> The current public repo (`OpenCut-app/OpenCut`) is an incomplete rewrite (Vite + TanStack Router).
+> **Use the archived legacy repo:** [`OpenCut-app/opencut-classic`](https://github.com/OpenCut-app/opencut-classic)
 
 ```bash
-# Clone the repository
+# 1. Clone the legacy OpenCut editor (required for MCP to work)
+git clone https://github.com/OpenCut-app/opencut-classic.git
+cd opencut-classic
+
+# 2. Clone this MCP controller
+cd ..
 git clone https://github.com/JXUE0/opencut-controller.git
 cd opencut-controller
 
-# Install dependencies (Playwright browsers will install automatically)
-bun install
+# 3. Install dependencies (Playwright Chromium installs automatically)
+pnpm install
 
-# 3. Patch the Local Editor:
-# To enable MCP control, you need to apply small patches to the OpenCut source code. We provide an automated script for this:
-bun run scripts/patch-editor.ts ../path-to-opencut
+# 4. Patch the Local Editor:
+# To enable MCP control, apply small patches to the OpenCut source code.
+# We provide an automated script for this:
+pnpm run patch-editor ../opencut-classic
 
-# 4. Install & Run Editor:
-cd ../path-to-opencut
-bun install
-bun dev:web
+# 5. Install & Run Editor:
+cd ../opencut-classic
+pnpm install
+pnpm dev:web
 ```
 
 > [!TIP]
-> The `bun install` command will automatically trigger a `postinstall` script to download the required Playwright Chromium binaries. No manual browser setup is needed!
+> The `pnpm install` command will automatically trigger a `postinstall` script to download the required Playwright Chromium binaries. No manual browser setup is needed!
 
 ## 💻 Usage
 
@@ -60,7 +71,7 @@ The server can be launched using two different transport protocols depending on 
 Ideal for standard local MCP clients like Claude Desktop.
 
 ```bash
-bun run src/index.ts
+pnpm run src/index.ts
 ```
 
 ### 2. `HTTP` Streamable Transport
@@ -71,13 +82,22 @@ Ideal for integrating with external workflow tools like n8n or remote services. 
 
 **Linux / macOS (Bash):**
 ```bash
-TRANSPORT_TYPE=http PORT=3002 bun run src/index.ts
+TRANSPORT_TYPE=http PORT=3002 pnpm run src/index.ts
 ```
 
 **Windows (PowerShell):**
 ```powershell
-$env:TRANSPORT_TYPE="http"; $env:PORT="3002"; bun run src/index.ts
+$env:TRANSPORT_TYPE="http"; $env:PORT="3002"; pnpm run src/index.ts
 ```
+
+### 3. HTTP with Authentication
+For secure remote access, set a bearer token:
+
+```bash
+MCP_AUTH_TOKEN=your-secure-token TRANSPORT_TYPE=http PORT=3002 pnpm run src/index.ts
+```
+
+Then include `Authorization: Bearer your-secure-token` in requests.
 
 ## 🛠️ Available MCP Tools (161)
 
@@ -125,7 +145,7 @@ To connect OpenCut Controller to your local Claude Desktop app, add the followin
 {
   "mcpServers": {
     "opencut-controller": {
-      "command": "bun",
+      "command": "pnpm",
       "args": ["run", "src/index.ts"],
       "cwd": "/absolute/path/to/opencut-controller"
     }
@@ -135,12 +155,12 @@ To connect OpenCut Controller to your local Claude Desktop app, add the followin
 
 ## ⚠️ Troubleshooting
 
-- **"Playwright browser not found"**: Ensure `postinstall` ran successfully. You can trigger it manually with `bun run playwright install chromium`.
-- **"PowerShell: The term 'TRANSPORT_TYPE=http' is not recognized"**: You are using bash syntax in Windows. Use `$env:TRANSPORT_TYPE="http"; bun run src/index.ts` instead.
+- **"Playwright browser not found"**: Ensure `postinstall` ran successfully. You can trigger it manually with `pnpm run playwright install chromium`.
+- **"PowerShell: The term 'TRANSPORT_TYPE=http' is not recognized"**: You are using bash syntax in Windows. Use `$env:TRANSPORT_TYPE="http"; pnpm run src/index.ts` instead.
 - **Connection Refused**: Ensure OpenCut is open and accessible by Playwright.
 
 > [!TIP]
-> If you encounter TypeScript errors during development or execution, you can verify your types locally by running `bun run build` (which executes `tsc --noEmit`).
+> If you encounter TypeScript errors during development or execution, you can verify your types locally by running `pnpm run build` (which executes `tsc --noEmit`).
 
 ## 🛠 Troubleshooting (Solución de problemas)
 
@@ -150,7 +170,7 @@ To connect OpenCut Controller to your local Claude Desktop app, add the followin
 
 ### 2. Error: `Incompatible React versions`
 **Cause**: `react` and `react-dom` versions mismatch in the monorepo.
-**Fix**: Ensure both are set to the exact same version (e.g., `19.0.0`) in the root `package.json` and run `bun install`.
+**Fix**: Ensure both are set to the exact same version (e.g., `19.2.0`) in the root `package.json` and run `pnpm install`.
 
 ### 3. Error: `Invalid input: expected string, received undefined` (Zod Error)
 **Cause**: Missing environment variables in `apps/web/.env`.

@@ -13,7 +13,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 > [!NOTE]
-> **OpenCut Controller** es un robusto servidor basado en el [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) diseñado para automatizar y controlar de forma total el [Editor de Video OpenCut](https://opencut.io) directamente desde modelos de Inteligencia Artificial (como Claude, o agentes dentro de n8n).
+> **OpenCut Controller** es un robusto servidor basado en el [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) diseñado para automatizar y controlar de forma total el [Editor de Video OpenCut](https://opencut.app/) directamente desde modelos de Inteligencia Artificial (como Claude, o agentes dentro de n8n).
 
 Al utilizar **Playwright** en segundo plano, este servidor se inyecta de forma fluida en el entorno del navegador de OpenCut. Esto otorga a los LLMs acceso programático para manipular la línea de tiempo, escenas, recursos multimedia y el motor de renderizado—convirtiendo efectivamente a OpenCut en una poderosa herramienta de edición de video autónoma impulsada por IA.
 
