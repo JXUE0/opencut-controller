@@ -18,24 +18,74 @@ if (!fs.existsSync(openCutPath)) {
 
 console.log(`🎬 Patching OpenCut at: ${openCutPath}`);
 console.log("");
-console.log("⚠️  IMPORTANT: This patch script is designed for the LEGACY Next.js version of OpenCut.");
-console.log("   The current OpenCut repo (github.com/OpenCut-app/OpenCut) is a complete rewrite");
-console.log("   using Vite + TanStack Router + React 19.2.0, and is NOT compatible with this MCP server.");
-console.log("   You need the legacy OpenCut version that uses Next.js App Router.");
-console.log("");
 
 let patchedAny = false;
+let detectedVersion: "legacy" | "modern" | "unknown" = "unknown";
 
-// 1. Patch apps/web/src/components/providers/editor-provider.tsx
-const editorProviderPath = path.join(openCutPath, "apps/web/src/components/providers/editor-provider.tsx");
-if (fs.existsSync(editorProviderPath)) {
-  let content = fs.readFileSync(editorProviderPath, "utf-8");
+/** Detect OpenCut version by checking file structure */
+function detectVersion(): "legacy" | "modern" | "unknown" {
+  // Modern: Vite + TanStack Router (no app/ directory, has routes/ + components/ui/)
+  const modernIndicators = [
+    "apps/web/src/routes/__root.tsx",
+    "apps/web/src/components/ui/button.tsx",
+    "apps/web/vite.config.ts",
+  ];
+  // Legacy: Next.js App Router (has app/ directory)
+  const legacyIndicators = [
+    "apps/web/src/app/layout.tsx",
+    "apps/web/src/components/providers/editor-provider.tsx",
+    "apps/web/next.config.js",
+  ];
 
-  if (!content.includes("window.__opencut")) {
-    console.log("📦 Injecting control hooks into editor-provider.tsx...");
+  const modernExists = modernIndicators.some(f => fs.existsSync(path.join(openCutPath, f)));
+  const legacyExists = legacyIndicators.some(f => fs.existsSync(path.join(openCutPath, f)));
 
-    // Add imports
-    const imports = `import { usePanelStore } from "@/editor/panel-store";
+  if (modernExists && !legacyExists) return "modern";
+  if (legacyExists && !modernExists) return "legacy";
+  if (modernExists && legacyExists) return "modern"; // prefer modern if both exist
+  return "unknown";
+}
+
+detectedVersion = detectVersion();
+
+if (detectedVersion === "modern") {
+  console.log("🔍 Detected: MODERN OpenCut (Vite + TanStack Router + React 19.2+)");
+  console.log("   The auto-patcher has limited support. You may need to manually add exposure hooks.");
+  console.log("");
+} else if (detectedVersion === "legacy") {
+  console.log("🔍 Detected: LEGACY OpenCut (Next.js App Router)");
+  console.log("");
+} else {
+  console.log("⚠️  Could not detect OpenCut version. Attempting legacy patterns...");
+  console.log("");
+}
+
+// ============================================================
+// PATCH 1: Editor Provider / Main Component (exposes __opencut & __stores)
+// ============================================================
+const editorProviderPaths = [
+  // Legacy
+  "apps/web/src/components/providers/editor-provider.tsx",
+  // Modern - common locations for main editor component
+  "apps/web/src/routes/editor.tsx",
+  "apps/web/src/routes/editor.$projectId.tsx",
+  "apps/web/src/components/editor/EditorProvider.tsx",
+  "apps/web/src/components/EditorProvider.tsx",
+  "apps/web/src/providers/EditorProvider.tsx",
+];
+
+for (const relPath of editorProviderPaths) {
+  const fullPath = path.join(openCutPath, relPath);
+  if (fs.existsSync(fullPath)) {
+    let content = fs.readFileSync(fullPath, "utf-8");
+
+    if (!content.includes("window.__opencut")) {
+      console.log(`📦 Injecting control hooks into ${relPath}...`);
+
+      // Detect import style and add exposure logic
+      if (content.includes("useEditorActions") || content.includes("useTimelineStore")) {
+        // Legacy-style: has editor object and stores
+        const imports = `import { usePanelStore } from "@/editor/panel-store";
 import { usePreviewStore } from "@/preview/preview-store";
 import { useSoundsStore } from "@/sounds/sounds-store";
 import { useStickersStore } from "@/stickers/stickers-store";
@@ -44,10 +94,15 @@ import { usePropertiesStore } from "@/components/editor/panels/properties/stores
 import { useKeybindingsStore } from "@/keybindings/keybindings-store";
 import { useTimelineStore } from "@/timeline/timeline-store";
 `;
-    content = content.replace('} from "@/services/renderer/gpu-renderer";', `} from "@/services/renderer/gpu-renderer";\n${imports}`);
 
-    // Add exposure logic
-    const exposureLogic = `
+        // Try to find a good place to insert imports
+        if (content.includes('} from "@/services/renderer/gpu-renderer";')) {
+          content = content.replace('} from "@/services/renderer/gpu-renderer";', `} from "@/services/renderer/gpu-renderer";\n${imports}`);
+        } else if (content.includes("import { useEditorActions }")) {
+          content = content.replace("import { useEditorActions }", `${imports}\nimport { useEditorActions }`);
+        }
+
+        const exposureLogic = `
 	const panel = usePanelStore();
 	const preview = usePreviewStore();
 	const sounds = useSoundsStore();
@@ -82,60 +137,96 @@ import { useTimelineStore } from "@/timeline/timeline-store";
 		timeline,
 	]);
 `;
-    content = content.replace("useEditorActions();\n\tuseKeybindingsListener();", `useEditorActions();\n\tuseKeybindingsListener();\n${exposureLogic}`);
 
-    fs.writeFileSync(editorProviderPath, content);
-    console.log("✅ editor-provider.tsx patched.");
-    patchedAny = true;
-  } else {
-    console.log("ℹ️ editor-provider.tsx already patched.");
+        // Try multiple insertion points
+        const insertionPoints = [
+          "useEditorActions();\n\tuseKeybindingsListener();",
+          "useEditorActions();\nuseKeybindingsListener();",
+          "useEditorActions()",
+          "useKeybindingsListener()",
+        ];
+
+        let inserted = false;
+        for (const point of insertionPoints) {
+          if (content.includes(point)) {
+            content = content.replace(point, `${point}\n${exposureLogic}`);
+            inserted = true;
+            break;
+          }
+        }
+
+        if (!inserted) {
+          console.log(`   ⚠️ Could not find insertion point in ${relPath}. Manual patch needed.`);
+        } else {
+          fs.writeFileSync(fullPath, content);
+          console.log(`✅ ${relPath} patched.`);
+          patchedAny = true;
+        }
+      } else {
+        console.log(`   ⚠️ ${relPath} doesn't match expected editor structure. Manual patch needed.`);
+      }
+    } else {
+      console.log(`ℹ️ ${relPath} already has __opencut exposure.`);
+    }
+    break; // Only patch the first matching file
   }
-} else {
-  console.log("⚠️ editor-provider.tsx not found — skipping (wrong OpenCut version?)");
 }
 
-// 2. Patch apps/web/src/app/projects/page.tsx (Next.js App Router)
-const projectsPagePath = path.join(openCutPath, "apps/web/src/app/projects/page.tsx");
-if (fs.existsSync(projectsPagePath)) {
-  let content = fs.readFileSync(projectsPagePath, "utf-8");
-  if (!content.includes("window.__opencut")) {
-    console.log("📦 Injecting hooks into projects/page.tsx...");
-    const projectExposure = `
+// ============================================================
+// PATCH 2: Projects Page (legacy only - Next.js app/projects/page.tsx)
+// ============================================================
+if (detectedVersion === "legacy") {
+  const projectsPagePath = path.join(openCutPath, "apps/web/src/app/projects/page.tsx");
+  if (fs.existsSync(projectsPagePath)) {
+    let content = fs.readFileSync(projectsPagePath, "utf-8");
+    if (!content.includes("window.__opencut")) {
+      console.log("📦 Injecting hooks into projects/page.tsx...");
+      const projectExposure = `
 	useEffect(() => {
 		(window as any).__opencut = editor;
 	}, [editor]);
 `;
-    content = content.replace("}, [editor.project]);", `}, [editor.project]);\n${projectExposure}`);
-    fs.writeFileSync(projectsPagePath, content);
-    console.log("✅ projects/page.tsx patched.");
-    patchedAny = true;
+      content = content.replace("}, [editor.project]);", `}, [editor.project]);\n${projectExposure}`);
+      fs.writeFileSync(projectsPagePath, content);
+      console.log("✅ projects/page.tsx patched.");
+      patchedAny = true;
+    }
   }
-} else {
-  console.log("⚠️ projects/page.tsx not found — skipping (wrong OpenCut version?)");
 }
 
-// 3. Fix env validation in apps/web/src/env/web.ts
-const envWebPath = path.join(openCutPath, "apps/web/src/env/web.ts");
-if (fs.existsSync(envWebPath)) {
-  let content = fs.readFileSync(envWebPath, "utf-8");
-  if (content.includes("z.url()")) {
-    console.log("🛡️ Relaxing environment validation...");
-    content = content.replace(/z\.url\(\)/g, "z.string().url().optional()");
-    content = content.replace(/DATABASE_URL: z\.string\(\)\.refine\([\s\S]*?\),/g, "DATABASE_URL: z.string().optional(),");
-    content = content.replace(/BETTER_AUTH_SECRET: z\.string\(\),/g, "BETTER_AUTH_SECRET: z.string().optional(),");
-    content = content.replace(/UPSTASH_REDIS_REST_TOKEN: z\.string\(\),/g, "UPSTASH_REDIS_REST_TOKEN: z.string().optional(),");
-    content = content.replace(/MARBLE_WORKSPACE_KEY: z\.string\(\),/g, "MARBLE_WORKSPACE_KEY: z.string().optional(),");
-    content = content.replace(/FREESOUND_CLIENT_ID: z\.string\(\),/g, "FREESOUND_CLIENT_ID: z.string().optional(),");
-    content = content.replace(/FREESOUND_API_KEY: z\.string\(\),/g, "FREESOUND_API_KEY: z.string().optional(),");
-    fs.writeFileSync(envWebPath, content);
-    console.log("✅ env/web.ts relaxed.");
-    patchedAny = true;
+// ============================================================
+// PATCH 3: Env validation (both versions may have this)
+// ============================================================
+const envWebPaths = [
+  "apps/web/src/env/web.ts",        // Legacy
+  "apps/web/src/lib/env.ts",        // Modern possible
+  "apps/web/env.ts",                // Modern possible
+];
+
+for (const relPath of envWebPaths) {
+  const fullPath = path.join(openCutPath, relPath);
+  if (fs.existsSync(fullPath)) {
+    let content = fs.readFileSync(fullPath, "utf-8");
+    if (content.includes("z.url()")) {
+      console.log(`🛡️ Relaxing environment validation in ${relPath}...`);
+      content = content.replace(/z\.url\(\)/g, "z.string().url().optional()");
+      content = content.replace(/DATABASE_URL: z\.string\(\)\.refine\([\s\S]*?\),/g, "DATABASE_URL: z.string().optional(),");
+      content = content.replace(/BETTER_AUTH_SECRET: z\.string\(\),/g, "BETTER_AUTH_SECRET: z.string().optional(),");
+      content = content.replace(/UPSTASH_REDIS_REST_TOKEN: z\.string\(\),/g, "UPSTASH_REDIS_REST_TOKEN: z.string().optional(),");
+      content = content.replace(/MARBLE_WORKSPACE_KEY: z\.string\(\),/g, "MARBLE_WORKSPACE_KEY: z.string().optional(),");
+      content = content.replace(/FREESOUND_CLIENT_ID: z\.string\(\),/g, "FREESOUND_CLIENT_ID: z.string().optional(),");
+      content = content.replace(/FREESOUND_API_KEY: z\.string\(\),/g, "FREESOUND_API_KEY: z.string().optional(),");
+      fs.writeFileSync(fullPath, content);
+      console.log(`✅ ${relPath} relaxed.`);
+      patchedAny = true;
+    }
+    break;
   }
-} else {
-  console.log("⚠️ env/web.ts not found — skipping");
 }
 
-// 4. Force React versions in apps/web/package.json to 19.2.0 (matching current OpenCut)
+// ============================================================
+// PATCH 4: React versions in package.json
+// ============================================================
 const webPackageJsonPath = path.join(openCutPath, "apps/web/package.json");
 if (fs.existsSync(webPackageJsonPath)) {
   console.log("⚛️ Setting compatible React versions...");
@@ -145,31 +236,93 @@ if (fs.existsSync(webPackageJsonPath)) {
   fs.writeFileSync(webPackageJsonPath, JSON.stringify(pkg, null, 2));
   console.log("✅ React versions set to 19.2.0.");
   patchedAny = true;
-} else {
-  console.log("⚠️ apps/web/package.json not found");
 }
 
-// 5. Create default .env if missing
-const envPath = path.join(openCutPath, "apps/web/.env");
-if (!fs.existsSync(envPath)) {
-  console.log("📝 Creating default .env file...");
-  const envContent = `
+// ============================================================
+// PATCH 5: Default .env
+// ============================================================
+const envPaths = [
+  "apps/web/.env",
+  "apps/web/.env.local",
+  ".env",
+];
+
+for (const relPath of envPaths) {
+  const fullPath = path.join(openCutPath, relPath);
+  if (!fs.existsSync(fullPath)) {
+    console.log(`📝 Creating default ${relPath}...`);
+    const envContent = `
 NODE_ENV=development
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
 DATABASE_URL="postgresql://opencut:opencut@localhost:5432/opencut"
 BETTER_AUTH_SECRET=dummy_secret
 `;
-  fs.writeFileSync(envPath, envContent.trim() + "\n");
-  console.log("✅ .env created.");
-  patchedAny = true;
+    fs.writeFileSync(fullPath, envContent.trim() + "\n");
+    console.log(`✅ ${relPath} created.`);
+    patchedAny = true;
+    break;
+  }
+}
+
+// ============================================================
+// MANUAL PATCHING GUIDE FOR MODERN VERSION
+// ============================================================
+if (detectedVersion === "modern") {
+  console.log("");
+  console.log("═══════════════════════════════════════════════════════════════");
+  console.log("📋 MANUAL PATCHING REQUIRED FOR MODERN OPENCUT");
+  console.log("═══════════════════════════════════════════════════════════════");
+  console.log("");
+  console.log("The modern OpenCut (Vite + TanStack Router) has a different structure.");
+  console.log("You need to manually add this exposure code to your main editor component:");
+  console.log("");
+  console.log("  // In your editor provider/component (e.g., routes/editor.tsx):");
+  console.log("  import { useEffect } from 'react';");
+  console.log("  import { useEditorStore } from '@/stores/editor-store';  // or wherever your editor context is");
+  console.log("  import { useTimelineStore } from '@/stores/timeline-store';");
+  console.log("  import { usePanelStore } from '@/stores/panel-store';");
+  console.log("  // ... import other stores you use");
+  console.log("");
+  console.log("  export function EditorProvider({ children }) {");
+  console.log("    const editor = useEditorStore();");
+  console.log("    const timeline = useTimelineStore();");
+  console.log("    const panel = usePanelStore();");
+  console.log("    // ... other stores");
+  console.log("");
+  console.log("    useEffect(() => {");
+  console.log("      const w = window as any;");
+  console.log("      w.__opencut = editor;");
+  console.log("      w.__stores = {");
+  console.log("        editor,");
+  console.log("        timeline,");
+  console.log("        panel,");
+  console.log("        // ... add other stores");
+  console.log("      };");
+  console.log("    }, [editor, timeline, panel /*, other stores */]);");
+  console.log("");
+  console.log("    return <>{children}</>;");
+  console.log("  }");
+  console.log("");
+  console.log("The MCP needs these stores exposed:");
+  console.log("  - __opencut.editor (or just __opencut with project methods)");
+  console.log("  - __stores.timeline (for timeline state)");
+  console.log("  - __stores.project (for project list/active)");
+  console.log("  - __stores.panel, __stores.preview, __stores.sounds, etc.");
+  console.log("");
+  console.log("After manual patching, run: pnpm install && pnpm dev");
+  console.log("═══════════════════════════════════════════════════════════════");
 }
 
 if (patchedAny) {
-  console.log("\n🎉 OpenCut patched successfully!");
-  console.log("Now run 'pnpm install' and 'pnpm dev:web' in the OpenCut directory.");
+  console.log("");
+  console.log("🎉 Auto-patching completed!");
+  console.log("Now run 'pnpm install' and 'pnpm dev' in the OpenCut directory.");
 } else {
-  console.log("\n⚠️ No files were patched. This likely means you have the NEW OpenCut rewrite");
-  console.log("   (Vite + TanStack Router), which is NOT compatible with this MCP server.");
-  console.log("   You need the LEGACY Next.js version of OpenCut for this controller to work.");
-  process.exit(1);
+  console.log("");
+  console.log("⚠️ No files were auto-patched.");
+  if (detectedVersion === "modern") {
+    console.log("   Follow the manual patching guide above.");
+  } else {
+    console.log("   This may not be a compatible OpenCut version.");
+  }
 }
