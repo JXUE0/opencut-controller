@@ -7,3 +7,5 @@ tsup.config.ts
 .env
 .gitignore
 *.log
+.swarm
+
