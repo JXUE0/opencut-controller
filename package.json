@@ -8,7 +8,7 @@
   "author": "JXUE0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/JXUE0/opencut-controller"
+    "url": "git+https://github.com/JXUE0/opencut-controller.git"
   },
   "bugs": {
     "url": "https://github.com/JXUE0/opencut-controller/issues"
@@ -25,7 +25,7 @@
   "main": "./dist/index.mjs",
   "types": "./dist/index.d.mts",
   "bin": {
-    "opencut-controller": "./dist/index.mjs"
+    "opencut-controller": "dist/index.mjs"
   },
   "files": [
     "dist",
@@ -49,12 +49,12 @@
     "@types/node": "^22.0.0",
     "@typescript-eslint/eslint-plugin": "^8.64.0",
     "@typescript-eslint/parser": "^8.64.0",
-    "@vitest/coverage-v8": "^2.0.0",
+    "@vitest/coverage-v8": "^4.1.10",
     "eslint": "^9.0.0",
     "tsup": "^8.4.0",
     "typescript": "^5.5.0",
     "typescript-eslint": "^8.64.0",
-    "vitest": "^2.0.0"
+    "vitest": "^4.1.10"
   },
   "peerDependencies": {
     "typescript": "^5.5.0"
