@@ -30,7 +30,8 @@ export const clipboardHandlers: [string, Handler][] = [
       const selected = editor.selection.getSelectedElements();
       const results = editor.timeline.getElementsWithTracks({ elements: selected });
       const items = results.map(({ track, element }: any) => {
-        const { id: _, ...elementWithoutId } = element;
+        const elementWithoutId = { ...element };
+        delete elementWithoutId.id;
         return { trackId: track.id, trackType: track.type, element: elementWithoutId };
       });
       (window as any).__stores?.timeline?.getState()?.setClipboard({ items });

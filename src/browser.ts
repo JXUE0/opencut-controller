@@ -1,5 +1,9 @@
 import { chromium, type Browser, type BrowserContext, type Page, type BrowserServer } from "playwright";
 
+export type SafeResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; error: string };
+
 const EDITOR_BASE = process.env.OPENCUT_URL ?? "http://localhost:3001";
 const READY_TIMEOUT_MS = 30_000;
 const READY_POLL_MS = 200;
@@ -11,6 +15,7 @@ class BrowserManager {
   private page: Page | null = null;
   private currentProjectId: string | null = null;
   private launchPromise: Promise<void> | null = null;
+  private navLock: Promise<unknown> = Promise.resolve();
 
   launch(): Promise<void> {
     if (!this.launchPromise) {
@@ -29,12 +34,9 @@ class BrowserManager {
     };
 
     if (process.platform === "win32") {
-      // On Windows/Git Bash, use launchServer() + connect() over WebSocket (TCP)
-      // to avoid --remote-debugging-pipe failures in Bun.
       this.server = await chromium.launchServer(launchOpts);
       this.browser = await chromium.connect(this.server.wsEndpoint());
     } else {
-      // On Linux (Docker/CI), launch() directly works fine.
       this.browser = await chromium.launch(launchOpts);
     }
 
@@ -48,39 +50,49 @@ class BrowserManager {
     await this.launchPromise;
   }
 
+  /** Serialize all navigations to avoid race conditions */
+  private async withNavLock<T>(fn: () => Promise<T>): Promise<T> {
+    const prev = this.navLock;
+    this.navLock = (async () => {
+      await prev;
+      return fn();
+    })();
+    return this.navLock as Promise<T>;
+  }
+
   async navigateToEditor(projectId: string): Promise<void> {
-    await this.ensureReady();
-    if (this.currentProjectId === projectId) {
-      const ready = await this.isEditorReady();
-      if (ready) return;
-    }
-    await this.page!.goto(`${EDITOR_BASE}/editor/${projectId}`);
-    await this.waitForEditorReady();
-    this.currentProjectId = projectId;
+    return this.withNavLock(async () => {
+      await this.ensureReady();
+      if (this.currentProjectId === projectId) {
+        const ready = await this.isEditorReady();
+        if (ready) return;
+      }
+      await this.page!.goto(`${EDITOR_BASE}/editor/${projectId}`);
+      await this.waitForEditorReady();
+      this.currentProjectId = projectId;
+    });
   }
 
   async navigateToHome(): Promise<void> {
-    await this.ensureReady();
-    await this.page!.goto(`${EDITOR_BASE}/projects`);
-    this.currentProjectId = null;
+    return this.withNavLock(async () => {
+      await this.ensureReady();
+      await this.page!.goto(`${EDITOR_BASE}/projects`);
+      this.currentProjectId = null;
+    });
   }
 
-  /**
-   * Navigate to the editor without a project ID.
-   * The editor-provider will create a new project and redirect to its ID.
-   * Returns the actual project ID after the editor is ready.
-   */
   async navigateToNewProject(): Promise<string> {
-    await this.ensureReady();
-    // Use a random placeholder — editor-provider sees "not found" and creates a new project
-    const placeholder = `new-${Date.now()}`;
-    await this.page!.goto(`${EDITOR_BASE}/editor/${placeholder}`);
-    await this.waitForEditorReady();
-    const id: string = await this.page!.evaluate(() => {
-      return (window as any).__opencut.project.getActive().metadata.id;
+    return this.withNavLock(async () => {
+      await this.ensureReady();
+      const placeholder = `new-${Date.now()}`;
+      await this.page!.goto(`${EDITOR_BASE}/editor/${placeholder}`);
+      await this.waitForEditorReady();
+      const id: string = await this.page!.evaluate(() => {
+        return (window as any).__opencut.project.getActive().metadata.id;
+      });
+      this.currentProjectId = id;
+      return id;
     });
-    this.currentProjectId = id;
-    return id;
   }
 
   private async isEditorReady(): Promise<boolean> {
@@ -101,24 +113,61 @@ class BrowserManager {
     throw new Error(`Editor not ready after ${READY_TIMEOUT_MS}ms`);
   }
 
-  /** Zero-argument evaluate — fn cannot capture outer variables */
+  /** Safe evaluate with error handling — never throws */
+  async safeEvaluate<T>(fn: () => T): Promise<SafeResult<T>> {
+    try {
+      await this.ensureReady();
+      const data = await this.page!.evaluate(fn);
+      return { ok: true, data };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: message };
+    }
+  }
+
+  /** Safe evaluate with argument — never throws */
+  async safeEvaluateWithArg<T>(fn: (arg: any) => T, arg: any): Promise<SafeResult<T>> {
+    try {
+      await this.ensureReady();
+      const data = await this.page!.evaluate(fn, arg);
+      return { ok: true, data };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: message };
+    }
+  }
+
+  /** Safe async evaluate with argument — never throws */
+  async safeEvaluateAsyncWithArg<T>(fn: (arg: any) => Promise<T>, arg: any): Promise<SafeResult<T>> {
+    try {
+      await this.ensureReady();
+      const data = await this.page!.evaluate(fn, arg);
+      return { ok: true, data };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: message };
+    }
+  }
+
+  /** Legacy evaluate (throws on error) — kept for backward compatibility */
   async evaluate<T>(fn: () => T): Promise<T> {
-    await this.ensureReady();
-    return this.page!.evaluate(fn);
+    const result = await this.safeEvaluate(fn);
+    if (!result.ok) throw new Error(result.error);
+    return result.data;
   }
 
-  /** Evaluate with a single serializable argument */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  /** Legacy evaluateWithArg (throws on error) */
   async evaluateWithArg(fn: (arg: any) => any, arg: any): Promise<any> {
-    await this.ensureReady();
-    return this.page!.evaluate(fn, arg);
+    const result = await this.safeEvaluateWithArg(fn, arg);
+    if (!result.ok) throw new Error(result.error);
+    return result.data;
   }
 
-  /** Evaluate with a single serializable argument (async fn) */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  /** Legacy evaluateAsyncWithArg (throws on error) */
   async evaluateAsyncWithArg(fn: (arg: any) => Promise<any>, arg: any): Promise<any> {
-    await this.ensureReady();
-    return this.page!.evaluate(fn, arg);
+    const result = await this.safeEvaluateAsyncWithArg(fn, arg);
+    if (!result.ok) throw new Error(result.error);
+    return result.data;
   }
 
   /** Direct HTTP API call (no browser context needed) */

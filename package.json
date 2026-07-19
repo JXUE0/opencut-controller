@@ -1,6 +1,7 @@
 {
   "name": "opencut-controller",
-  "version": "1.30.0",
+  "version": "1.31.0",
+  "type": "module",
   "mcpName": "io.github.JXUE0/opencut-controller",
   "description": "Professional MCP server for video editing automation with OpenCut",
   "license": "MIT",
@@ -35,22 +36,36 @@
     "README.es.md"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format esm --clean --minify --dts",
+    "build": "tsup src/index.ts --format esm --dts",
     "dev": "tsup src/index.ts --format esm --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit",
     "postinstall": "playwright install chromium",
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {
-    "@types/bun": "latest",
+    "@types/node": "^22.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.64.0",
+    "@typescript-eslint/parser": "^8.64.0",
+    "@vitest/coverage-v8": "^2.0.0",
+    "eslint": "^9.0.0",
     "tsup": "^8.4.0",
-    "typescript": "^6.0.3"
+    "typescript": "^5.5.0",
+    "typescript-eslint": "^8.64.0",
+    "vitest": "^2.0.0"
   },
   "peerDependencies": {
-    "typescript": "^6.0.3"
+    "typescript": "^5.5.0"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "playwright": "^1.59.1",
     "zod": "^4.4.1"
+  },
+  "packageManager": "pnpm@9.0.0",
+  "engines": {
+    "node": ">=20.0.0"
   }
 }

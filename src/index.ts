@@ -2,7 +2,7 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
@@ -94,7 +94,6 @@ const allHandlers = new Map<string, Handler>([
   ...apiHandlers,
 ]);
 
-// Resources: expose project data, timeline info, etc.
 const RESOURCES = [
   {
     uri: "opencut://projects",
@@ -116,7 +115,6 @@ const RESOURCES = [
   },
 ];
 
-// Prompts: reusable prompt templates for common tasks
 const PROMPTS = [
   {
     name: "create_intro_video",
@@ -147,13 +145,13 @@ const PROMPTS = [
 async function getResourceContent(uri: string): Promise<string> {
   await browserManager.launch();
   if (uri === "opencut://projects") {
-    const projects = await browserManager.evaluate(() => {
+    const result = await browserManager.safeEvaluate(() => {
       const store = (window as any).__stores?.project?.getState?.();
       return store?.projects ?? [];
     });
-    return JSON.stringify(projects, null, 2);
+    return JSON.stringify(result.ok ? result.data : [], null, 2);
   } else if (uri === "opencut://editor/state") {
-    const state = await browserManager.evaluate(() => {
+    const result = await browserManager.safeEvaluate(() => {
       const projectStore = (window as any).__stores?.project?.getState?.();
       const timelineStore = (window as any).__stores?.timeline?.getState?.();
       return {
@@ -163,13 +161,13 @@ async function getResourceContent(uri: string): Promise<string> {
         currentTime: timelineStore?.currentTime,
       };
     });
-    return JSON.stringify(state, null, 2);
+    return JSON.stringify(result.ok ? result.data : {}, null, 2);
   } else if (uri === "opencut://timeline/tracks") {
-    const tracks = await browserManager.evaluate(() => {
+    const result = await browserManager.safeEvaluate(() => {
       const store = (window as any).__stores?.timeline?.getState?.();
       return store?.tracks ?? [];
     });
-    return JSON.stringify(tracks, null, 2);
+    return JSON.stringify(result.ok ? result.data : [], null, 2);
   }
   throw new Error(`Unknown resource: ${uri}`);
 }
@@ -191,10 +189,44 @@ function getPromptContent(name: string, args: Record<string, unknown>): string {
   throw new Error(`Unknown prompt: ${name}`);
 }
 
+function createAuthMiddleware(): (req: IncomingMessage, res: ServerResponse) => boolean {
+  const expectedToken = process.env.MCP_AUTH_TOKEN;
+  if (!expectedToken) {
+    console.warn("[opencut-controller] MCP_AUTH_TOKEN not set — HTTP transport has no authentication!");
+    return () => true;
+  }
+  return (req, res) => {
+    const auth = req.headers.authorization;
+    if (!auth?.startsWith("Bearer ")) {
+      res.writeHead(401, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Missing or invalid Authorization header" }));
+      return false;
+    }
+    const token = auth.slice(7);
+    if (token !== expectedToken) {
+      res.writeHead(403, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Invalid token" }));
+      return false;
+    }
+    return true;
+  };
+}
+
+function createHealthHandler() {
+  return async (_req: IncomingMessage, res: ServerResponse) => {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({
+      status: "ok",
+      timestamp: new Date().toISOString(),
+      transport: process.env.TRANSPORT_TYPE ?? "stdio",
+      browser: "connected",
+    }));
+  };
+}
+
 async function main() {
   console.error(`[opencut-controller] Starting server with ${allTools.length} tools`);
 
-  // Launch browser in background — tool calls will wait on it automatically
   browserManager.launch().then(() => {
     console.error("[opencut-controller] Browser ready");
   }).catch((err) => {
@@ -245,7 +277,6 @@ async function main() {
     }
   });
 
-  // Resources handlers
   server.setRequestHandler(ListResourcesRequestSchema, async () => ({
     resources: RESOURCES,
   }));
@@ -263,7 +294,6 @@ async function main() {
     }
   });
 
-  // Prompts handlers
   server.setRequestHandler(ListPromptsRequestSchema, async () => ({
     prompts: PROMPTS,
   }));
@@ -289,8 +319,9 @@ async function main() {
 
   if (transportType === "http") {
     const port = parseInt(process.env.PORT ?? "3002", 10);
-    
-    // Factory function to create a configured server for each request (stateless mode)
+    const authMiddleware = createAuthMiddleware();
+    const healthHandler = createHealthHandler();
+
     function createRequestServer() {
       const requestServer = new Server(
         { name: "opencut-controller", version: "0.1.0" },
@@ -333,7 +364,6 @@ async function main() {
         }
       });
 
-      // Resources handlers
       requestServer.setRequestHandler(ListResourcesRequestSchema, async () => ({
         resources: RESOURCES,
       }));
@@ -351,7 +381,6 @@ async function main() {
         }
       });
 
-      // Prompts handlers
       requestServer.setRequestHandler(ListPromptsRequestSchema, async () => ({
         prompts: PROMPTS,
       }));
@@ -379,10 +408,9 @@ async function main() {
     }
 
     const httpServer = createServer(async (req, res) => {
-      // Handle CORS - restrict in production!
       res.setHeader("Access-Control-Allow-Origin", "*");
       res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Mcp-Session-Id");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Mcp-Session-Id, Authorization");
 
       if (req.method === "OPTIONS") {
         res.writeHead(204);
@@ -390,22 +418,30 @@ async function main() {
         return;
       }
 
+      if (req.url === "/health" || req.url === "/healthz") {
+        await healthHandler(req, res);
+        return;
+      }
+
       if (req.url === "/mcp" || req.url?.startsWith("/mcp")) {
-        // Create new server + transport per request for stateless mode
+        if (!authMiddleware(req, res)) return;
+
         const requestServer = createRequestServer();
         const httpTransport = new StreamableHTTPServerTransport({
-          sessionIdGenerator: undefined, // stateless mode
+          sessionIdGenerator: undefined,
         });
         await requestServer.connect(httpTransport);
         await httpTransport.handleRequest(req, res);
-      } else {
-        res.writeHead(404, { "Content-Type": "text/plain" });
-        res.end("Not found");
+        return;
       }
+
+      res.writeHead(404, { "Content-Type": "text/plain" });
+      res.end("Not found");
     });
 
     httpServer.listen(port, () => {
       console.error(`[opencut-controller] HTTP transport listening on http://localhost:${port}/mcp`);
+      console.error(`[opencut-controller] Health check: http://localhost:${port}/health`);
     });
   } else {
     const transport = new StdioServerTransport();

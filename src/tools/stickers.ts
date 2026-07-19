@@ -76,9 +76,9 @@ export const stickersHandlers: [string, Handler][] = [
       category: z.enum(["all", "emoji", "flags", "icons", "shapes"]).optional(),
       limit: z.number().optional(),
     }).parse(args);
-    const results = await browserManager.evaluateWithArg(async ({ query, category, limit }: any) => {
-      (window as any).__stores?.stickers?.getState()?.setSearchQuery({ query });
-      await (window as any).__stores?.stickers?.getState()?.searchStickers({ query });
+    const results = await browserManager.evaluateWithArg(async ({ query: q, category: cat, limit: lim }: any) => {
+      (window as any).__stores?.stickers?.getState()?.setSearchQuery({ query: q });
+      await (window as any).__stores?.stickers?.getState()?.searchStickers({ query: q, category: cat, limit: lim });
       return (window as any).__stores?.stickers?.getState()?.searchResults;
     }, { query, category, limit });
     return { results };
@@ -102,41 +102,31 @@ export const stickersHandlers: [string, Handler][] = [
       y: z.number().optional(),
       scale: z.number().optional(),
     });
-    const p = schema.parse(args);
-    await browserManager.evaluateWithArg((p: any) => {
-      const editor = (window as any).__opencut;
-      const trackId = editor.timeline.addTrack({ type: "sticker" });
-      const dur = p.duration ?? 3;
-      editor.timeline.insertElement({
-        element: {
-          id: crypto.randomUUID(),
-          type: "sticker",
-          name: p.name ?? p.stickerId,
-          stickerId: p.stickerId,
-          duration: dur,
-          startTime: p.startTime ?? editor.playback.getCurrentTime(),
-          trimStart: 0,
-          trimEnd: dur,
-          opacity: 1,
-          transform: { x: p.x ?? 0, y: p.y ?? 0, scaleX: p.scale ?? 1, scaleY: p.scale ?? 1, rotation: 0 },
-        },
-        placement: { mode: "explicit", trackId },
+    const parsed = schema.parse(args);
+    await browserManager.evaluateWithArg((p: typeof parsed) => {
+      (window as any).__stores?.stickers?.getState()?.addStickerToTimeline({
+        stickerId: p.stickerId,
+        name: p.name,
+        startTime: p.startTime,
+        duration: p.duration ?? 3,
+        x: p.x ?? 0,
+        y: p.y ?? 0,
+        scale: p.scale ?? 1,
       });
-      (window as any).__stores?.stickers?.getState()?.addToRecentStickers({ stickerId: p.stickerId });
-    }, p);
+    }, parsed);
     return { success: true };
   }],
 
   ["sticker_list_recent", async () => {
-    const recent = await browserManager.evaluate(() => {
+    const recents = await browserManager.evaluate(() => {
       return (window as any).__stores?.stickers?.getState()?.recentStickers ?? [];
     });
-    return { recent };
+    return { recents };
   }],
 
   ["sticker_clear_recent", async () => {
     await browserManager.evaluate(() => {
-      (window as any).__stores?.stickers?.getState()?.clearRecentStickers();
+      (window as any).__stores?.stickers?.getState()?.clearRecentStickers?.();
     });
     return { success: true };
   }],
@@ -146,6 +136,6 @@ export const stickersHandlers: [string, Handler][] = [
     await browserManager.evaluateWithArg((cat: string) => {
       (window as any).__stores?.stickers?.getState()?.setSelectedCategory({ category: cat });
     }, category);
-    return { success: true };
+    return { success: true, category };
   }],
 ];
