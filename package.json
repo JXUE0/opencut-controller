@@ -44,6 +44,7 @@
     "typecheck": "tsc --noEmit",
     "patch-editor": "npx tsx scripts/patch-editor.ts",
     "postinstall": "playwright install chromium",
+    "prepare": "npm run build",
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {

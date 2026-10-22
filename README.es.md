@@ -90,6 +90,7 @@ Ideal para clientes MCP locales estándar como Claude Desktop.
 npx -y opencut-controller
 ```
 
+Última versión directamente desde GitHub (se compila al instalar): `npx -y github:JXUE0/opencut-controller`.
 Desde un clon de este repo: `pnpm build && node dist/index.js`.
 
 ### 2. Transporte `HTTP` (Streamable)
