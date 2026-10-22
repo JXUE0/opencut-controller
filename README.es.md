@@ -90,7 +90,7 @@ Ideal para clientes MCP locales estándar como Claude Desktop.
 npx -y opencut-controller
 ```
 
-Última versión directamente desde GitHub (se compila al instalar): `npx -y github:JXUE0/opencut-controller`.
+Última versión directamente desde GitHub (se compila al instalar): `npx -y --allow-git=all github:JXUE0/opencut-controller` (`--allow-git` es obligatorio desde npm 12).
 Desde un clon de este repo: `pnpm build && node dist/index.js`.
 
 ### 2. Transporte `HTTP` (Streamable)
@@ -179,7 +179,7 @@ El navegador se cierra solo cuando el cliente se desconecta.
 
 ## ⚠️ Solución de Problemas
 
-- **"Playwright browser not found"**: Asegúrate de que el comando `postinstall` se ejecutó correctamente. Puedes lanzarlo manualmente con `npx playwright install chromium`.
+- **"Playwright browser not found"**: Asegúrate de que el comando `postinstall` se ejecutó correctamente. Puedes lanzarlo manualmente con `npx playwright install chromium`. npm 12+ bloquea los scripts de instalación por defecto, así que con `npx` ejecuta `npx playwright install chromium` una vez antes del primer uso.
 - **"PowerShell: The term 'TRANSPORT_TYPE=http' is not recognized"**: Estás usando sintaxis de Bash en Windows. Usa `$env:TRANSPORT_TYPE="http"; npx -y opencut-controller` en su lugar.
 - **Connection Refused / `ERR_CONNECTION_REFUSED`**: OpenCut no está corriendo en `OPENCUT_URL` (puerto `3001` por defecto, no el `3000` de Next.js).
 
