@@ -16,6 +16,74 @@ export function toFrameRate(fps: number): FrameRate {
   return { numerator: Math.round(fps * 1000), denominator: 1000 };
 }
 
+/** OpenCut's MediaTime unit (rust/crates/time: TICKS_PER_SECOND = 120_000) */
+export const TICKS_PER_SECOND = 120_000;
+
+export function secondsToTicks(seconds: number): number {
+  return Math.round(seconds * TICKS_PER_SECOND);
+}
+
+export function ticksToSeconds(ticks: number): number {
+  return ticks / TICKS_PER_SECOND;
+}
+
+// Element fields OpenCut stores as MediaTime; the MCP API speaks seconds
+const TIME_KEYS = ["startTime", "duration", "trimStart", "trimEnd", "sourceDuration"] as const;
+
+function convertTimes<T extends Record<string, unknown>>(obj: T, fn: (n: number) => number): T {
+  const out: Record<string, unknown> = { ...obj };
+  for (const key of TIME_KEYS) {
+    if (typeof out[key] === "number") out[key] = fn(out[key] as number);
+  }
+  return out as T;
+}
+
+export const timesToTicks = <T extends Record<string, unknown>>(obj: T) => convertTimes(obj, secondsToTicks);
+export const timesToSeconds = <T extends Record<string, unknown>>(obj: T) => convertTimes(obj, ticksToSeconds);
+
+const VISUAL_DEFAULTS = {
+  hidden: false,
+  transform: { scaleX: 1, scaleY: 1, position: { x: 0, y: 0 }, rotate: 0 },
+  opacity: 1,
+  blendMode: "normal",
+};
+
+/** Mirrors OpenCut's visual element defaults (timeline/defaults.ts); times in ticks */
+export function visualDefaults(position?: { x?: number; y?: number }, scale = 1) {
+  return {
+    ...VISUAL_DEFAULTS,
+    transform: { ...VISUAL_DEFAULTS.transform, scaleX: scale, scaleY: scale, position: { x: position?.x ?? 0, y: position?.y ?? 0 } },
+  };
+}
+
+/** Mirrors OpenCut's buildTextElement(); startTime/duration in seconds */
+export function buildTextElement(p: {
+  content: string; startTime: number; duration: number; fontSize?: number; fontFamily?: string; color?: string;
+  textAlign?: string; fontWeight?: string; fontStyle?: string; x?: number; y?: number; background?: boolean;
+}) {
+  const { hidden: _unused, ...visual } = visualDefaults({ x: p.x, y: p.y });
+  return {
+    type: "text",
+    name: p.content.substring(0, 20),
+    content: p.content,
+    startTime: secondsToTicks(p.startTime),
+    duration: secondsToTicks(p.duration),
+    trimStart: 0,
+    trimEnd: 0,
+    fontSize: p.fontSize ?? 15,
+    fontFamily: p.fontFamily ?? "Arial",
+    color: p.color ?? "#ffffff",
+    background: { enabled: p.background ?? false, color: "#000000", cornerRadius: 0, paddingX: 30, paddingY: 42, offsetX: 0, offsetY: 0 },
+    textAlign: p.textAlign ?? "center",
+    fontWeight: p.fontWeight ?? "normal",
+    fontStyle: p.fontStyle ?? "normal",
+    textDecoration: "none",
+    letterSpacing: 0,
+    lineHeight: 1.2,
+    ...visual,
+  };
+}
+
 const EDITOR_BASE = process.env.OPENCUT_URL ?? "http://localhost:3001";
 const READY_TIMEOUT_MS = 30_000;
 const READY_POLL_MS = 200;
@@ -40,8 +108,10 @@ class BrowserManager {
     const headless = process.env.MCP_HEADLESS !== "false";
     const launchOpts = {
       headless,
-      ...(executablePath ? { executablePath } : {}),
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      // channel "chromium" = new headless; the default headless-shell crashes when OpenCut renders
+      ...(executablePath ? { executablePath } : { channel: "chromium" }),
+      // Hardware H.264 encoding (Media Foundation on Windows) stalls OpenCut's mp4 export forever
+      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-accelerated-video-encode"],
     };
 
     this.browser = await chromium.launch(launchOpts);
@@ -174,6 +244,23 @@ class BrowserManager {
     const result = await this.safeEvaluateAsyncWithArg(fn, arg);
     if (!result.ok) throw new Error(result.error);
     return result.data;
+  }
+
+  /**
+   * Inserts an element (times already in ticks) and returns where it landed.
+   * OpenCut generates the element id itself, so it is found by diffing the scene's tracks.
+   */
+  async insertElement(element: Record<string, unknown>, trackId?: string): Promise<{ trackId: string; elementId: string } | null> {
+    return this.evaluateWithArg(({ element, trackId }: any) => {
+      const editor = (window as any).__opencut;
+      const all = () => {
+        const t = editor.scenes.getActiveScene().tracks;
+        return [t.main, ...t.overlay, ...t.audio].flatMap((tr: any) => tr.elements.map((e: any) => ({ trackId: tr.id, elementId: e.id })));
+      };
+      const before = new Set(all().map((x: any) => x.elementId));
+      editor.timeline.insertElement({ element, placement: trackId ? { mode: "explicit", trackId } : { mode: "auto" } });
+      return all().find((x: any) => !before.has(x.elementId)) ?? null;
+    }, { element, trackId });
   }
 
   /** Direct HTTP API call (no browser context needed) */

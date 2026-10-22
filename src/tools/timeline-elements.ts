@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { browserManager } from "../browser.js";
+import { browserManager, secondsToTicks, timesToTicks, timesToSeconds } from "../browser.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 
 type Handler = (args: Record<string, unknown>) => Promise<unknown>;
@@ -208,17 +208,35 @@ export const timelineElementsTools: Tool[] = [
   },
 ];
 
+const elementRefs = z.array(z.object({ trackId: z.string(), elementId: z.string() }));
+
+/** Reads an element's current times (in ticks) so partial updates can be completed */
+async function getElementTicks(trackId: string, elementId: string) {
+  const el = await browserManager.evaluateWithArg(({ trackId, elementId }: any) => {
+    const track = (window as any).__opencut.timeline.getTrackById({ trackId });
+    const e = track?.elements.find((x: any) => x.id === elementId);
+    return e ? { startTime: e.startTime, duration: e.duration, trimStart: e.trimStart, trimEnd: e.trimEnd } : null;
+  }, { trackId, elementId });
+  if (!el) throw new Error(`Element ${elementId} not found on track ${trackId}`);
+  return el as { startTime: number; duration: number; trimStart: number; trimEnd: number };
+}
+
+async function patchElements(updates: { trackId: string; elementId: string; patch: Record<string, unknown> }[]) {
+  await browserManager.evaluateWithArg((updates: any[]) => {
+    (window as any).__opencut.timeline.updateElements({ updates });
+  }, updates);
+}
+
 export const timelineElementsHandlers: [string, Handler][] = [
   ["timeline_element_insert", async (args) => {
     const { trackId, element } = z.object({ trackId: z.string(), element: z.record(z.string(), z.unknown()) }).parse(args);
-    await browserManager.evaluateWithArg(({ trackId, element }: { trackId: string; element: any }) => {
-      (window as any).__opencut.timeline.insertElement({ element, placement: { mode: "explicit", trackId } });
-    }, { trackId, element });
-    return { success: true };
+    const placed = await browserManager.insertElement(timesToTicks(element), trackId);
+    if (!placed) throw new Error("OpenCut rejected the element (missing fields or no free space on the track?)");
+    return { success: true, ...placed };
   }],
 
   ["timeline_element_delete", async (args) => {
-    const { elements } = z.object({ elements: z.array(z.object({ trackId: z.string(), elementId: z.string() })) }).parse(args);
+    const { elements } = z.object({ elements: elementRefs }).parse(args);
     await browserManager.evaluateWithArg((els: { trackId: string; elementId: string }[]) => {
       (window as any).__opencut.timeline.deleteElements({ elements: els });
     }, elements);
@@ -226,95 +244,88 @@ export const timelineElementsHandlers: [string, Handler][] = [
   }],
 
   ["timeline_element_duplicate", async (args) => {
-    const { elements, offset } = z.object({
-      elements: z.array(z.object({ trackId: z.string(), elementId: z.string() })),
-      offset: z.number().optional(),
-    }).parse(args);
-    await browserManager.evaluateWithArg(({ elements, offset }: { elements: any[]; offset?: number }) => {
-      (window as any).__opencut.timeline.duplicateElements({ elements, offset });
-    }, { elements, offset });
-    return { success: true };
+    const { elements, offset } = z.object({ elements: elementRefs, offset: z.number().optional() }).parse(args);
+    const duplicated: { trackId: string; elementId: string }[] = await browserManager.evaluateWithArg((elements: any[]) => {
+      return (window as any).__opencut.timeline.duplicateElements({ elements });
+    }, elements);
+    if (offset !== undefined) {
+      // OpenCut has no duplicate offset: shift each copy relative to its original
+      const moves = [];
+      for (const [i, dup] of duplicated.entries()) {
+        const original = await getElementTicks(elements[i]!.trackId, elements[i]!.elementId);
+        moves.push({ sourceTrackId: dup.trackId, targetTrackId: dup.trackId, elementId: dup.elementId, newStartTime: original.startTime + secondsToTicks(offset) });
+      }
+      await browserManager.evaluateWithArg((moves: any[]) => {
+        (window as any).__opencut.timeline.moveElements({ moves });
+      }, moves);
+    }
+    return { success: true, duplicated };
   }],
 
   ["timeline_element_move", async (args) => {
-    const schema = z.object({
+    const p = z.object({
       sourceTrackId: z.string(),
       targetTrackId: z.string(),
       elementId: z.string(),
-      newStartTime: z.number(),
-    });
-    const parsed = schema.parse(args);
-    await browserManager.evaluateWithArg((p: typeof parsed) => {
-      (window as any).__opencut.timeline.moveElement(p);
-    }, parsed);
+      newStartTime: z.number().min(0),
+    }).parse(args);
+    await browserManager.evaluateWithArg((move: any) => {
+      (window as any).__opencut.timeline.moveElements({ moves: [move] });
+    }, { ...p, newStartTime: secondsToTicks(p.newStartTime) });
     return { success: true };
   }],
 
   ["timeline_element_split", async (args) => {
-    const { elements, splitTime } = z.object({
-      elements: z.array(z.object({ trackId: z.string(), elementId: z.string() })),
-      splitTime: z.number(),
-    }).parse(args);
-    await browserManager.evaluateWithArg(({ elements, splitTime }: { elements: any[]; splitTime: number }) => {
-      (window as any).__opencut.timeline.splitElements({ elements, splitTime });
-    }, { elements, splitTime });
-    return { success: true };
+    const { elements, splitTime } = z.object({ elements: elementRefs, splitTime: z.number() }).parse(args);
+    const rightSide = await browserManager.evaluateWithArg(({ elements, splitTime }: any) => {
+      return (window as any).__opencut.timeline.splitElements({ elements, splitTime });
+    }, { elements, splitTime: secondsToTicks(splitTime) });
+    return { success: true, rightSide };
   }],
 
   ["timeline_element_trim", async (args) => {
-    const schema = z.object({
+    const p = z.object({
       trackId: z.string(),
       elementId: z.string(),
-      trimStart: z.number().optional(),
-      trimEnd: z.number().optional(),
+      trimStart: z.number().min(0).optional(),
+      trimEnd: z.number().min(0).optional(),
+    }).parse(args);
+    // OpenCut requires both trim values; keep the current one for whichever is omitted
+    const current = await getElementTicks(p.trackId, p.elementId);
+    await browserManager.evaluateWithArg((t: any) => {
+      (window as any).__opencut.timeline.updateElementTrim(t);
+    }, {
+      elementId: p.elementId,
+      trimStart: p.trimStart === undefined ? current.trimStart : secondsToTicks(p.trimStart),
+      trimEnd: p.trimEnd === undefined ? current.trimEnd : secondsToTicks(p.trimEnd),
     });
-    const parsed = schema.parse(args);
-    await browserManager.evaluateWithArg((p: typeof parsed) => {
-      (window as any).__opencut.timeline.updateElementTrim(p);
-    }, parsed);
     return { success: true };
   }],
 
   ["timeline_element_update_duration", async (args) => {
     const { trackId, elementId, duration } = z.object({
-      trackId: z.string(), elementId: z.string(), duration: z.number(),
+      trackId: z.string(), elementId: z.string(), duration: z.number().positive(),
     }).parse(args);
-    await browserManager.evaluateWithArg(({ trackId, elementId, duration }: any) => {
-      (window as any).__opencut.timeline.updateElementDuration({ trackId, elementId, duration });
-    }, { trackId, elementId, duration });
+    await patchElements([{ trackId, elementId, patch: { duration: secondsToTicks(duration) } }]);
     return { success: true };
   }],
 
   ["timeline_element_update_start_time", async (args) => {
-    const { elements, startTime } = z.object({
-      elements: z.array(z.object({ trackId: z.string(), elementId: z.string() })),
-      startTime: z.number(),
-    }).parse(args);
-    await browserManager.evaluateWithArg(({ elements, startTime }: any) => {
-      (window as any).__opencut.timeline.updateElementStartTime({ elements, startTime });
-    }, { elements, startTime });
+    const { elements, startTime } = z.object({ elements: elementRefs, startTime: z.number().min(0) }).parse(args);
+    await patchElements(elements.map((e) => ({ ...e, patch: { startTime: secondsToTicks(startTime) } })));
     return { success: true };
   }],
 
   ["timeline_element_toggle_visibility", async (args) => {
-    const { elements, hidden } = z.object({
-      elements: z.array(z.object({ trackId: z.string(), elementId: z.string() })),
-      hidden: z.boolean(),
-    }).parse(args);
-    await browserManager.evaluateWithArg(({ elements, hidden }: any) => {
-      (window as any).__opencut.timeline.toggleElementsVisibility({ elements, hidden });
-    }, { elements, hidden });
+    const { elements, hidden } = z.object({ elements: elementRefs, hidden: z.boolean() }).parse(args);
+    // OpenCut's toggleElementsVisibility only flips state; set it explicitly instead
+    await patchElements(elements.map((e) => ({ ...e, patch: { hidden } })));
     return { success: true };
   }],
 
   ["timeline_element_toggle_mute", async (args) => {
-    const { elements, muted } = z.object({
-      elements: z.array(z.object({ trackId: z.string(), elementId: z.string() })),
-      muted: z.boolean(),
-    }).parse(args);
-    await browserManager.evaluateWithArg(({ elements, muted }: any) => {
-      (window as any).__opencut.timeline.toggleElementsMuted({ elements, muted });
-    }, { elements, muted });
+    const { elements, muted } = z.object({ elements: elementRefs, muted: z.boolean() }).parse(args);
+    await patchElements(elements.map((e) => ({ ...e, patch: { muted } })));
     return { success: true };
   }],
 
@@ -324,9 +335,7 @@ export const timelineElementsHandlers: [string, Handler][] = [
       elementId: z.string(),
       updates: z.record(z.string(), z.unknown()),
     }).parse(args);
-    await browserManager.evaluateWithArg(({ trackId, elementId, updates }: any) => {
-      (window as any).__opencut.timeline.updateElements({ updates: [{ trackId, elementId, updates }] });
-    }, { trackId, elementId, updates });
+    await patchElements([{ trackId, elementId, patch: timesToTicks(updates) }]);
     return { success: true };
   }],
 
@@ -336,7 +345,7 @@ export const timelineElementsHandlers: [string, Handler][] = [
       const track = (window as any).__opencut.timeline.getTrackById({ trackId });
       return track?.elements.find((e: any) => e.id === elementId) ?? null;
     }, { trackId, elementId });
-    return { element };
+    return { element: element ? timesToSeconds(element) : null };
   }],
 
   ["timeline_element_preview", async (args) => {
@@ -349,7 +358,7 @@ export const timelineElementsHandlers: [string, Handler][] = [
     }).parse(args);
     await browserManager.evaluateWithArg((updates: any[]) => {
       (window as any).__opencut.timeline.previewElements({ updates });
-    }, updates);
+    }, updates.map(({ trackId, elementId, updates }) => ({ trackId, elementId, updates: timesToTicks(updates) })));
     return { success: true };
   }],
 

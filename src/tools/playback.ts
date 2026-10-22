@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { browserManager } from "../browser.js";
+import { browserManager, secondsToTicks, ticksToSeconds } from "../browser.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 
 type Handler = (args: Record<string, unknown>) => Promise<unknown>;
@@ -90,7 +90,7 @@ export const playbackHandlers: [string, Handler][] = [
     const { time } = z.object({ time: z.number() }).parse(args);
     await browserManager.evaluateWithArg((t: number) => {
       (window as any).__opencut.playback.seek({ time: t });
-    }, time);
+    }, secondsToTicks(time));
     return { success: true, time };
   }],
   ["playback_set_volume", async (args) => {
@@ -113,7 +113,7 @@ export const playbackHandlers: [string, Handler][] = [
     return { success: true };
   }],
   ["playback_get_state", async () => {
-    return await browserManager.evaluate(() => {
+    const state = await browserManager.evaluate(() => {
       const pb = (window as any).__opencut.playback;
       return {
         isPlaying: pb.getIsPlaying(),
@@ -122,5 +122,6 @@ export const playbackHandlers: [string, Handler][] = [
         isMuted: pb.isMuted(),
       };
     });
+    return { ...state, currentTime: ticksToSeconds(state.currentTime) };
   }],
 ];

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { browserManager } from "../browser.js";
+import { browserManager, secondsToTicks, ticksToSeconds, timesToTicks } from "../browser.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 
 type Handler = (args: Record<string, unknown>) => Promise<unknown>;
@@ -83,6 +83,12 @@ export const bookmarksTools: Tool[] = [
   },
 ];
 
+const bookmarkToSeconds = (b: any) => ({
+  ...b,
+  time: ticksToSeconds(b.time),
+  ...(typeof b.duration === "number" ? { duration: ticksToSeconds(b.duration) } : {}),
+});
+
 export const bookmarksHandlers: [string, Handler][] = [
   ["bookmark_toggle", async (args) => {
     const { time } = z.object({ time: z.number().optional() }).parse(args);
@@ -90,7 +96,7 @@ export const bookmarksHandlers: [string, Handler][] = [
       const editor = (window as any).__opencut;
       const bookmarkTime = t ?? editor.playback.getCurrentTime();
       await editor.scenes.toggleBookmark({ time: bookmarkTime });
-    }, time);
+    }, time === undefined ? undefined : secondsToTicks(time));
     return { success: true };
   }],
 
@@ -102,10 +108,10 @@ export const bookmarksHandlers: [string, Handler][] = [
       duration: z.number().optional(),
     });
     const { time, ...rest } = schema.parse(args);
-    const updates = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined));
+    const updates = timesToTicks(Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined)));
     await browserManager.evaluateAsyncWithArg(async ({ time, updates }: any) => {
       await (window as any).__opencut.scenes.updateBookmark({ time, updates });
-    }, { time, updates });
+    }, { time: secondsToTicks(time), updates });
     return { success: true };
   }],
 
@@ -113,7 +119,7 @@ export const bookmarksHandlers: [string, Handler][] = [
     const { oldTime, newTime } = z.object({ oldTime: z.number(), newTime: z.number() }).parse(args);
     await browserManager.evaluateAsyncWithArg(async ({ fromTime, toTime }: any) => {
       await (window as any).__opencut.scenes.moveBookmark({ fromTime, toTime });
-    }, { fromTime: oldTime, toTime: newTime });
+    }, { fromTime: secondsToTicks(oldTime), toTime: secondsToTicks(newTime) });
     return { success: true };
   }],
 
@@ -121,7 +127,7 @@ export const bookmarksHandlers: [string, Handler][] = [
     const { time } = z.object({ time: z.number() }).parse(args);
     await browserManager.evaluateAsyncWithArg(async (t: number) => {
       await (window as any).__opencut.scenes.removeBookmark({ time: t });
-    }, time);
+    }, secondsToTicks(time));
     return { success: true };
   }],
 
@@ -130,22 +136,22 @@ export const bookmarksHandlers: [string, Handler][] = [
       const scene = (window as any).__opencut.scenes.getActiveScene();
       return scene?.bookmarks ?? [];
     });
-    return { bookmarks };
+    return { bookmarks: bookmarks.map(bookmarkToSeconds) };
   }],
 
   ["bookmark_get_at_time", async (args) => {
     const { time } = z.object({ time: z.number() }).parse(args);
     const bookmark = await browserManager.evaluateWithArg((t: number) => {
       return (window as any).__opencut.scenes.getBookmarkAtTime({ time: t }) ?? null;
-    }, time);
-    return { bookmark };
+    }, secondsToTicks(time));
+    return { bookmark: bookmark ? bookmarkToSeconds(bookmark) : null };
   }],
 
   ["bookmark_is_bookmarked", async (args) => {
     const { time } = z.object({ time: z.number() }).parse(args);
     const isBookmarked = await browserManager.evaluateWithArg((t: number) => {
       return (window as any).__opencut.scenes.isBookmarked({ time: t });
-    }, time);
+    }, secondsToTicks(time));
     return { isBookmarked };
   }],
 

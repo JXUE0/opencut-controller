@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { browserManager } from "../browser.js";
+import { browserManager, secondsToTicks, ticksToSeconds } from "../browser.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 
 type Handler = (args: Record<string, unknown>) => Promise<unknown>;
@@ -103,7 +103,9 @@ export const keyframesHandlers: [string, Handler][] = [
       time: z.number(), value: z.unknown(),
       interpolation: z.enum(["linear", "hold"]).optional(),
     });
-    const parsed = schema.parse(args);
+    const raw = schema.parse(args);
+    // Keyframe times are relative to the element start
+    const parsed = { ...raw, time: secondsToTicks(raw.time) };
     await browserManager.evaluateWithArg((p: any) => {
       (window as any).__opencut.timeline.upsertKeyframes({
         keyframes: [{
@@ -144,7 +146,7 @@ export const keyframesHandlers: [string, Handler][] = [
         keyframeId: p.keyframeId,
         time: p.time,
       });
-    }, parsed);
+    }, { ...parsed, time: secondsToTicks(parsed.time) });
     return { success: true };
   }],
 
@@ -157,7 +159,7 @@ export const keyframesHandlers: [string, Handler][] = [
     const parsed = schema.parse(args);
     await browserManager.evaluateWithArg((p: any) => {
       (window as any).__opencut.timeline.upsertEffectParamKeyframe(p);
-    }, parsed);
+    }, { ...parsed, time: secondsToTicks(parsed.time) });
     return { success: true };
   }],
 
@@ -179,6 +181,10 @@ export const keyframesHandlers: [string, Handler][] = [
       const el = track?.elements.find((e: any) => e.id === elementId);
       return el?.animations ?? {};
     }, { trackId, elementId });
-    return { keyframes };
+    const channels = Object.fromEntries(Object.entries((keyframes as any).channels ?? {}).map(([key, ch]: [string, any]) => [
+      key,
+      { ...ch, keys: (ch.keys ?? []).map((k: any) => ({ ...k, time: ticksToSeconds(k.time) })) },
+    ]));
+    return { keyframes: { ...keyframes, channels } };
   }],
 ];

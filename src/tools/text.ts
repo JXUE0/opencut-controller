@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { browserManager } from "../browser.js";
+import { browserManager, buildTextElement, ticksToSeconds, timesToSeconds } from "../browser.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 
 type Handler = (args: Record<string, unknown>) => Promise<unknown>;
@@ -159,42 +159,17 @@ export const textHandlers: [string, Handler][] = [
       y: z.number().optional(),
     });
     const p = schema.parse(args);
-    const result = await browserManager.evaluateWithArg((p: any) => {
-      const editor = (window as any).__opencut;
-      let targetTrackId = p.trackId;
-      if (!targetTrackId) {
-        targetTrackId = editor.timeline.addTrack({ type: "text" });
-      }
-      const element = {
-        id: crypto.randomUUID(),
-        type: "text",
-        name: p.content.substring(0, 20),
-        content: p.content,
-        duration: p.duration ?? 3,
-        startTime: p.startTime ?? editor.playback.getCurrentTime(),
-        trimStart: 0,
-        trimEnd: p.duration ?? 3,
-        fontSize: p.fontSize ?? 48,
-        fontFamily: p.fontFamily ?? "Inter",
-        color: p.color ?? "#ffffff",
-        textAlign: p.textAlign ?? "center",
-        fontWeight: p.fontWeight ?? "normal",
-        fontStyle: p.fontStyle ?? "normal",
-        textDecoration: "none",
-        opacity: 1,
-        transform: { x: p.x ?? 0, y: p.y ?? 0, scaleX: 1, scaleY: 1, rotation: 0 },
-        background: { enabled: false, color: "#000000", cornerRadius: 4, paddingX: 8, paddingY: 4 },
-      };
-      editor.timeline.insertElement({ element, placement: { mode: "explicit", trackId: targetTrackId } });
-      return { elementId: element.id, trackId: targetTrackId };
-    }, p);
-    return { success: true, ...result };
+    const startTime = p.startTime ?? ticksToSeconds(await browserManager.evaluate(() => (window as any).__opencut.playback.getCurrentTime()));
+    const element = buildTextElement({ ...p, startTime, duration: p.duration ?? 5 });
+    const placed = await browserManager.insertElement(element, p.trackId);
+    if (!placed) throw new Error("OpenCut rejected the text element (no free space on the target track?)");
+    return { success: true, ...placed };
   }],
 
   ["text_update_content", async (args) => {
     const { trackId, elementId, content } = z.object({ trackId: z.string(), elementId: z.string(), content: z.string() }).parse(args);
     await browserManager.evaluateWithArg(({ trackId, elementId, content }: any) => {
-      (window as any).__opencut.timeline.updateElements({ updates: [{ trackId, elementId, updates: { content } }] });
+      (window as any).__opencut.timeline.updateElements({ updates: [{ trackId, elementId, patch: { content } }] });
     }, { trackId, elementId, content });
     return { success: true };
   }],
@@ -210,7 +185,7 @@ export const textHandlers: [string, Handler][] = [
     const { trackId, elementId, ...updates } = schema.parse(args);
     const filtered = Object.fromEntries(Object.entries(updates).filter(([, v]) => v !== undefined));
     await browserManager.evaluateWithArg(({ trackId, elementId, updates }: any) => {
-      (window as any).__opencut.timeline.updateElements({ updates: [{ trackId, elementId, updates }] });
+      (window as any).__opencut.timeline.updateElements({ updates: [{ trackId, elementId, patch: updates }] });
     }, { trackId, elementId, updates: filtered });
     return { success: true };
   }],
@@ -225,7 +200,7 @@ export const textHandlers: [string, Handler][] = [
     const { trackId, elementId, ...updates } = schema.parse(args);
     const filtered = Object.fromEntries(Object.entries(updates).filter(([, v]) => v !== undefined));
     await browserManager.evaluateWithArg(({ trackId, elementId, updates }: any) => {
-      (window as any).__opencut.timeline.updateElements({ updates: [{ trackId, elementId, updates }] });
+      (window as any).__opencut.timeline.updateElements({ updates: [{ trackId, elementId, patch: updates }] });
     }, { trackId, elementId, updates: filtered });
     return { success: true };
   }],
@@ -243,7 +218,7 @@ export const textHandlers: [string, Handler][] = [
       const track = (window as any).__opencut.timeline.getTrackById({ trackId });
       const el = track?.elements.find((e: any) => e.id === elementId);
       (window as any).__opencut.timeline.updateElements({
-        updates: [{ trackId, elementId, updates: { background: { ...el?.background, ...bg } } }],
+        updates: [{ trackId, elementId, patch: { background: { ...el?.background, ...bg } } }],
       });
     }, { trackId, elementId, bg: filtered });
     return { success: true };
@@ -256,40 +231,42 @@ export const textHandlers: [string, Handler][] = [
       scaleX: z.number().optional(), scaleY: z.number().optional(),
       rotation: z.number().optional(),
     });
-    const { trackId, elementId, ...t } = schema.parse(args);
-    const filtered = Object.fromEntries(Object.entries(t).filter(([, v]) => v !== undefined));
-    await browserManager.evaluateWithArg(({ trackId, elementId, tf }: any) => {
+    const { trackId, elementId, x, y, scaleX, scaleY, rotation } = schema.parse(args);
+    // OpenCut's Transform is { scaleX, scaleY, position: { x, y }, rotate }
+    const tf = Object.fromEntries(Object.entries({ scaleX, scaleY, rotate: rotation }).filter(([, v]) => v !== undefined));
+    await browserManager.evaluateWithArg(({ trackId, elementId, tf, x, y }: any) => {
       const track = (window as any).__opencut.timeline.getTrackById({ trackId });
       const el = track?.elements.find((e: any) => e.id === elementId);
+      const position = { ...el?.transform?.position, ...(x !== undefined ? { x } : {}), ...(y !== undefined ? { y } : {}) };
       (window as any).__opencut.timeline.updateElements({
-        updates: [{ trackId, elementId, updates: { transform: { ...el?.transform, ...tf } } }],
+        updates: [{ trackId, elementId, patch: { transform: { ...el?.transform, ...tf, position } } }],
       });
-    }, { trackId, elementId, tf: filtered });
+    }, { trackId, elementId, tf, x, y });
     return { success: true };
   }],
 
   ["text_update_blend_mode", async (args) => {
     const { trackId, elementId, blendMode } = z.object({ trackId: z.string(), elementId: z.string(), blendMode: z.string() }).parse(args);
     await browserManager.evaluateWithArg(({ trackId, elementId, blendMode }: any) => {
-      (window as any).__opencut.timeline.updateElements({ updates: [{ trackId, elementId, updates: { blendMode } }] });
+      (window as any).__opencut.timeline.updateElements({ updates: [{ trackId, elementId, patch: { blendMode } }] });
     }, { trackId, elementId, blendMode });
     return { success: true };
   }],
 
   ["text_list", async () => {
     const elements = await browserManager.evaluate(() => {
-      const tracks = (window as any).__opencut.timeline.getTracks();
+      const st = (window as any).__opencut.scenes.getActiveScene().tracks;
       const textEls: any[] = [];
-      for (const t of tracks) {
-        if (t.type === "text") {
-          for (const el of t.elements) {
+      for (const t of [st.main, ...st.overlay, ...st.audio]) {
+        for (const el of t.elements) {
+          if (el.type === "text") {
             textEls.push({ trackId: t.id, elementId: el.id, content: el.content, startTime: el.startTime, duration: el.duration });
           }
         }
       }
       return textEls;
     });
-    return { elements };
+    return { elements: elements.map(timesToSeconds) };
   }],
 
   ["text_delete", async (args) => {

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { browserManager } from "../browser.js";
+import { browserManager, secondsToTicks } from "../browser.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 
 type Handler = (args: Record<string, unknown>) => Promise<unknown>;
@@ -13,7 +13,7 @@ export const audioTools: Tool[] = [
       properties: {
         trackId: { type: "string" },
         elementId: { type: "string" },
-        volume: { type: "number", minimum: 0, maximum: 1 },
+        volume: { type: "number", minimum: -60, maximum: 20, description: "Gain in dB (0 = original level, -60 = silent)" },
       },
       required: ["trackId", "elementId", "volume"],
     },
@@ -89,10 +89,10 @@ export const audioTools: Tool[] = [
 export const audioHandlers: [string, Handler][] = [
   ["audio_set_element_volume", async (args) => {
     const { trackId, elementId, volume } = z.object({
-      trackId: z.string(), elementId: z.string(), volume: z.number().min(0).max(1),
+      trackId: z.string(), elementId: z.string(), volume: z.number().min(-60).max(20),
     }).parse(args);
     await browserManager.evaluateWithArg(({ trackId, elementId, volume }: any) => {
-      (window as any).__opencut.timeline.updateElements({ updates: [{ trackId, elementId, updates: { volume } }] });
+      (window as any).__opencut.timeline.updateElements({ updates: [{ trackId, elementId, patch: { volume } }] });
     }, { trackId, elementId, volume });
     return { success: true };
   }],
@@ -160,27 +160,17 @@ export const audioHandlers: [string, Handler][] = [
       duration: z.number().optional(),
       startTime: z.number().optional(),
     }).parse(args);
-    await browserManager.evaluateWithArg(({ sourceUrl, name, duration, startTime }: any) => {
-      const editor = (window as any).__opencut;
-      const trackId = editor.timeline.addTrack({ type: "audio" });
-      const dur = duration ?? 30;
-      editor.timeline.insertElement({
-        element: {
-          id: crypto.randomUUID(),
-          type: "audio",
-          name,
-          sourceType: "library",
-          sourceUrl,
-          duration: dur,
-          startTime: startTime ?? editor.playback.getCurrentTime(),
-          trimStart: 0,
-          trimEnd: dur,
-          volume: 1,
-        },
-        placement: { mode: "explicit", trackId },
-      });
-    }, { sourceUrl, name, duration, startTime });
-    return { success: true };
+    const startTicks = startTime === undefined
+      ? await browserManager.evaluate(() => (window as any).__opencut.playback.getCurrentTime())
+      : secondsToTicks(startTime);
+    const dur = secondsToTicks(duration ?? 30);
+    // Mirrors OpenCut's buildLibraryAudioElement()
+    const placed = await browserManager.insertElement({
+      type: "audio", sourceType: "library", sourceUrl, name,
+      duration: dur, startTime: startTicks, trimStart: 0, trimEnd: 0, sourceDuration: dur, volume: 0, muted: false,
+    });
+    if (!placed) throw new Error("OpenCut rejected the audio element");
+    return { success: true, ...placed };
   }],
 
   ["audio_sound_clear_saved", async () => {

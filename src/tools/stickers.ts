@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { browserManager } from "../browser.js";
+import { browserManager, secondsToTicks, visualDefaults } from "../browser.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 
 type Handler = (args: Record<string, unknown>) => Promise<unknown>;
@@ -12,7 +12,7 @@ export const stickersTools: Tool[] = [
       type: "object",
       properties: {
         query: { type: "string", description: "Search query" },
-        category: { type: "string", enum: ["all", "emoji", "flags", "icons", "shapes"] },
+        category: { type: "string", enum: ["all", "flags", "shapes"] },
         limit: { type: "number", description: "Max results (default: 50)" },
       },
       required: ["query"],
@@ -24,7 +24,7 @@ export const stickersTools: Tool[] = [
     inputSchema: {
       type: "object",
       properties: {
-        category: { type: "string", enum: ["all", "emoji", "flags", "icons", "shapes"] },
+        category: { type: "string", enum: ["all", "flags", "shapes"] },
       },
       required: ["category"],
     },
@@ -62,7 +62,7 @@ export const stickersTools: Tool[] = [
     inputSchema: {
       type: "object",
       properties: {
-        category: { type: "string", enum: ["all", "emoji", "flags", "icons", "shapes"] },
+        category: { type: "string", enum: ["all", "flags", "shapes"] },
       },
       required: ["category"],
     },
@@ -73,7 +73,7 @@ export const stickersHandlers: [string, Handler][] = [
   ["sticker_search", async (args) => {
     const { query, category, limit } = z.object({
       query: z.string(),
-      category: z.enum(["all", "emoji", "flags", "icons", "shapes"]).optional(),
+      category: z.enum(["all", "flags", "shapes"]).optional(),
       limit: z.number().optional(),
     }).parse(args);
     const results = await browserManager.evaluateWithArg(async ({ query: q, category: cat, limit: lim }: any) => {
@@ -85,7 +85,7 @@ export const stickersHandlers: [string, Handler][] = [
   }],
 
   ["sticker_browse_category", async (args) => {
-    const { category } = z.object({ category: z.enum(["all", "emoji", "flags", "icons", "shapes"]) }).parse(args);
+    const { category } = z.object({ category: z.enum(["all", "flags", "shapes"]) }).parse(args);
     await browserManager.evaluateWithArg((cat: string) => {
       (window as any).__stores?.stickers?.getState()?.setSelectedCategory({ category: cat });
     }, category);
@@ -102,19 +102,26 @@ export const stickersHandlers: [string, Handler][] = [
       y: z.number().optional(),
       scale: z.number().optional(),
     });
-    const parsed = schema.parse(args);
-    await browserManager.evaluateWithArg((p: typeof parsed) => {
-      (window as any).__stores?.stickers?.getState()?.addStickerToTimeline({
-        stickerId: p.stickerId,
-        name: p.name,
-        startTime: p.startTime,
-        duration: p.duration ?? 3,
-        x: p.x ?? 0,
-        y: p.y ?? 0,
-        scale: p.scale ?? 1,
-      });
-    }, parsed);
-    return { success: true };
+    const p = schema.parse(args);
+    // The stickers store has no addStickerToTimeline; mirror OpenCut's buildStickerElement()
+    const startTicks = p.startTime === undefined
+      ? await browserManager.evaluate(() => (window as any).__opencut.playback.getCurrentTime())
+      : secondsToTicks(p.startTime);
+    const placed = await browserManager.insertElement({
+      type: "sticker",
+      name: p.name ?? p.stickerId.split(":").slice(1).pop()?.replaceAll("-", " ") ?? p.stickerId,
+      stickerId: p.stickerId,
+      duration: secondsToTicks(p.duration ?? 5),
+      startTime: startTicks,
+      trimStart: 0,
+      trimEnd: 0,
+      ...visualDefaults({ x: p.x, y: p.y }, p.scale ?? 1),
+    });
+    if (!placed) throw new Error("OpenCut rejected the sticker element");
+    await browserManager.evaluateWithArg((stickerId: string) => {
+      (window as any).__stores?.stickers?.getState()?.addToRecentStickers({ stickerId });
+    }, p.stickerId);
+    return { success: true, ...placed };
   }],
 
   ["sticker_list_recent", async () => {
@@ -132,7 +139,7 @@ export const stickersHandlers: [string, Handler][] = [
   }],
 
   ["sticker_set_category", async (args) => {
-    const { category } = z.object({ category: z.enum(["all", "emoji", "flags", "icons", "shapes"]) }).parse(args);
+    const { category } = z.object({ category: z.enum(["all", "flags", "shapes"]) }).parse(args);
     await browserManager.evaluateWithArg((cat: string) => {
       (window as any).__stores?.stickers?.getState()?.setSelectedCategory({ category: cat });
     }, category);

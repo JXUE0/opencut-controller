@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { browserManager } from "../browser.js";
+import { browserManager, secondsToTicks } from "../browser.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 
 type Handler = (args: Record<string, unknown>) => Promise<unknown>;
@@ -25,29 +25,16 @@ export const clipboardTools: Tool[] = [
 
 export const clipboardHandlers: [string, Handler][] = [
   ["clipboard_copy", async () => {
-    await browserManager.evaluate(() => {
-      const editor = (window as any).__opencut;
-      const selected = editor.selection.getSelectedElements();
-      const results = editor.timeline.getElementsWithTracks({ elements: selected });
-      const items = results.map(({ track, element }: any) => {
-        const elementWithoutId = { ...element };
-        delete elementWithoutId.id;
-        return { trackId: track.id, trackType: track.type, element: elementWithoutId };
-      });
-      (window as any).__stores?.timeline?.getState()?.setClipboard({ items });
-    });
-    return { success: true };
+    const copied = await browserManager.evaluate(() => (window as any).__opencut.clipboard.copy());
+    return { success: copied, ...(copied ? {} : { error: "Nothing selected to copy" }) };
   }],
 
   ["clipboard_paste", async (args) => {
     const { time } = z.object({ time: z.number().optional() }).parse(args);
-    await browserManager.evaluateWithArg((t?: number) => {
-      const editor = (window as any).__opencut;
-      const pasteTime = t ?? editor.playback.getCurrentTime();
-      const clipboard = (window as any).__stores?.timeline?.getState()?.clipboard;
-      if (!clipboard?.items?.length) return;
-      editor.timeline.pasteAtTime({ time: pasteTime, clipboardItems: clipboard.items });
-    }, time);
-    return { success: true };
+    // OpenCut defaults to the playhead when time is omitted
+    const pasted = await browserManager.evaluateWithArg((t?: number) => {
+      return (window as any).__opencut.clipboard.paste(t === undefined ? {} : { time: t });
+    }, time === undefined ? undefined : secondsToTicks(time));
+    return { success: pasted, ...(pasted ? {} : { error: "Clipboard is empty or paste was rejected" }) };
   }],
 ];

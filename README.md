@@ -33,8 +33,8 @@ Ensure you have [pnpm](https://pnpm.io/) (or Bun) installed on your system.
 
 > [!IMPORTANT]
 > **OpenCut Controller requires the Legacy OpenCut (Next.js App Router)** — the version with a complete editor, timeline, and stores.
-> The current public repo (`OpenCut-app/OpenCut`) is an incomplete rewrite (Vite + TanStack Router).
-> **Use the archived legacy repo:** [`OpenCut-app/opencut-classic`](https://github.com/OpenCut-app/opencut-classic)
+> The current public repo (`OpenCut-app/OpenCut`) is an early rewrite (Rust core + GPUI desktop app + Vite web shell) whose editor is not implemented yet, so there is nothing to control there.
+> **Use the archived legacy repo:** [`OpenCut-app/opencut-classic`](https://github.com/OpenCut-app/opencut-classic) — upstream itself recommends it for now.
 
 ```bash
 # 1. Clone the legacy OpenCut editor (required for MCP to work)
@@ -54,14 +54,30 @@ pnpm install
 # We provide an automated script for this:
 pnpm run patch-editor ../opencut-classic
 
-# 5. Install & Run Editor:
+# 5. Install & run the editor on port 3001 (the port the MCP expects by default)
 cd ../opencut-classic
-pnpm install
-pnpm dev:web
+bun install
+cd apps/web && bunx next dev --turbopack -p 3001
 ```
 
 > [!TIP]
 > The `pnpm install` command will automatically trigger a `postinstall` script to download the required Playwright Chromium binaries. No manual browser setup is needed!
+
+> [!NOTE]
+> The patcher is idempotent: running it again on an already patched editor is a no-op. If you patched with a version older than 1.32.0, restore `apps/web/src/components/providers/editor-provider.tsx` from git before re-running it — the old patch exposed store state instead of the stores.
+
+## ⚙️ Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OPENCUT_URL` | `http://localhost:3001` | URL of the patched local OpenCut editor. |
+| `MCP_HEADLESS` | `true` | Set to `false` to watch the browser while the MCP works. |
+| `CHROMIUM_PATH` | — | Use a specific Chromium/Chrome binary instead of Playwright's. |
+| `TRANSPORT_TYPE` | `stdio` | `stdio` or `http`. |
+| `PORT` | `3002` | HTTP transport port. |
+| `MCP_AUTH_TOKEN` | — | Bearer token for the HTTP transport (strongly recommended). |
+
+**Conventions:** every time value (`startTime`, `duration`, `time`, `trimStart`, …) is in **seconds**; the controller converts to OpenCut's internal ticks. FPS accepts plain numbers (`30`, `29.97`). Element volume is in **dB** (`-60` to `20`, `0` = original).
 
 ## 💻 Usage
 
@@ -71,8 +87,10 @@ The server can be launched using two different transport protocols depending on 
 Ideal for standard local MCP clients like Claude Desktop.
 
 ```bash
-pnpm run src/index.ts
+npx -y opencut-controller
 ```
+
+From a clone of this repo: `pnpm build && node dist/index.js`.
 
 ### 2. `HTTP` Streamable Transport
 Ideal for integrating with external workflow tools like n8n or remote services. The server listens at `http://localhost:3002/mcp`.
@@ -82,19 +100,19 @@ Ideal for integrating with external workflow tools like n8n or remote services. 
 
 **Linux / macOS (Bash):**
 ```bash
-TRANSPORT_TYPE=http PORT=3002 pnpm run src/index.ts
+TRANSPORT_TYPE=http PORT=3002 npx -y opencut-controller
 ```
 
 **Windows (PowerShell):**
 ```powershell
-$env:TRANSPORT_TYPE="http"; $env:PORT="3002"; pnpm run src/index.ts
+$env:TRANSPORT_TYPE="http"; $env:PORT="3002"; npx -y opencut-controller
 ```
 
 ### 3. HTTP with Authentication
 For secure remote access, set a bearer token:
 
 ```bash
-MCP_AUTH_TOKEN=your-secure-token TRANSPORT_TYPE=http PORT=3002 pnpm run src/index.ts
+MCP_AUTH_TOKEN=your-secure-token TRANSPORT_TYPE=http PORT=3002 npx -y opencut-controller
 ```
 
 Then include `Authorization: Bearer your-secure-token` in requests.
@@ -105,23 +123,28 @@ The controller exposes 161 highly granular tools to the LLM, categorized as foll
 
 | Category | Tools | Description |
 |----------|-------|-------------|
-| **📁 Project** | 6 | Create, open, save, and export OpenCut projects. |
-| **🎬 Scenes** | 8 | Manage scene lifecycle, renaming, and active state. |
-| **▶️ Playback** | 5 | Control timeline playback, pause, stop, and seek. |
-| **⏱️ Timeline Tracks** | 7 | Add, remove, lock, and manage track visibility. |
-| **🧩 Timeline Elements** | 12 | Manipulate clips: trim, split, move, duplicate, and select. |
-| **✨ Timeline Effects** | 9 | Apply and tweak visual effects and presets. |
-| **📌 Keyframes** | 8 | Granular control over animation interpolation and easing. |
-| **🎯 Selection/Clipboard** | 10 | Standard editing operations (copy, cut, paste, delete). |
-| **🕰️ History** | 5 | Time-travel through undo/redo states. |
-| **🎞️ Media** | 10 | Import, search, trim, and optimize raw media files. |
-| **📝 Text** | 7 | Generate and format text overlays and animations. |
-| **🎵 Audio** | 11 | Search music/SFX, mix volumes, and apply audio fades. |
-| **🎨 Stickers/Canvas**| 11 | Add overlays, manage canvas zoom, resolution, and pan. |
-| **⚙️ Transcribe/Export** | 10 | Auto-transcribe audio and manage the final video rendering. |
-| **🔖 Bookmarks/Panels** | 10 | Navigate the UI and manage layout layouts. |
-| **🔑 Auth & Storage** | 13 | Manage user sessions, project state backups, and sync. |
-| **🌐 API** | 8 | Directly interact with OpenCut's backend endpoints. |
+| **📁 Project** | 16 | Create, load, save, duplicate projects and change their settings. |
+| **🎬 Scenes** | 6 | Manage scene lifecycle, renaming, and active state. |
+| **▶️ Playback** | 10 | Play, pause, stop, seek, volume, and mute. |
+| **⏱️ Timeline Tracks & Settings** | 10 | List, inspect, mute, hide tracks; timeline settings. |
+| **🧩 Timeline Elements** | 15 | Insert, trim, split, move, duplicate, and update clips. |
+| **✨ Timeline Effects** | 5 | Apply and tweak clip effects. |
+| **📌 Keyframes** | 6 | Add, retime, and remove animation keyframes. |
+| **🎯 Selection/Clipboard** | 6 | Select elements, copy and paste. |
+| **🕰️ History** | 4 | Undo and redo. |
+| **🎞️ Media** | 7 | Import media files and place them on the timeline. |
+| **📝 Text** | 9 | Create and style text overlays. |
+| **🎵 Audio** | 8 | Search music/SFX and set element volume. |
+| **🎨 Stickers/Canvas**| 13 | Add stickers; canvas size, FPS, and background. |
+| **⚙️ Transcribe/Export** | 11 | Captions from transcripts; export to MP4/WebM files. |
+| **🔖 Bookmarks/Panels/Keybindings** | 23 | Timeline bookmarks, UI panels, and shortcuts. |
+| **🔑 Auth & Storage** | 9 | User sessions and storage. |
+| **🌐 API** | 3 | Health check and sound search via OpenCut's backend. |
+
+> [!NOTE]
+> OpenCut's main track is magnetic: its first clip always starts at `0`. Use an overlay element (text, sticker, a second clip) for free positioning. Tracks are created automatically when an element is inserted without `trackId`; OpenCut deletes empty tracks, so `timeline_track_add` returns an explanatory error.
+
+`export_project` accepts `outputPath` to write the rendered `.mp4`/`.webm` file to disk.
 
 ## 📦 MCP Resources
 Resources provide context directly to the LLM about the current state of OpenCut:
@@ -137,36 +160,37 @@ Quick-start templates for complex actions:
 
 ## 🔌 Integrating with Claude Desktop
 
-> Make sure to replace `/absolute/path/to/opencut-controller` with the actual path on your local machine.
-
 To connect OpenCut Controller to your local Claude Desktop app, add the following to your `claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
     "opencut-controller": {
-      "command": "pnpm",
-      "args": ["run", "src/index.ts"],
-      "cwd": "/absolute/path/to/opencut-controller"
+      "command": "npx",
+      "args": ["-y", "opencut-controller"],
+      "env": { "OPENCUT_URL": "http://localhost:3001" }
     }
   }
 }
 ```
 
+The browser is closed automatically when the client disconnects.
+
 ## ⚠️ Troubleshooting
 
-- **"Playwright browser not found"**: Ensure `postinstall` ran successfully. You can trigger it manually with `pnpm run playwright install chromium`.
-- **"PowerShell: The term 'TRANSPORT_TYPE=http' is not recognized"**: You are using bash syntax in Windows. Use `$env:TRANSPORT_TYPE="http"; pnpm run src/index.ts` instead.
-- **Connection Refused**: Ensure OpenCut is open and accessible by Playwright.
+- **"Playwright browser not found"**: Ensure `postinstall` ran successfully. You can trigger it manually with `npx playwright install chromium`.
+- **"PowerShell: The term 'TRANSPORT_TYPE=http' is not recognized"**: You are using bash syntax in Windows. Use `$env:TRANSPORT_TYPE="http"; npx -y opencut-controller` instead.
+- **Connection Refused / `ERR_CONNECTION_REFUSED`**: OpenCut is not running on `OPENCUT_URL` (default port `3001`, not Next.js' default `3000`).
 
 > [!TIP]
-> If you encounter TypeScript errors during development or execution, you can verify your types locally by running `pnpm run build` (which executes `tsc --noEmit`).
+> To check types during development run `pnpm run typecheck`; `pnpm run build` bundles `dist/`.
 
-## 🛠 Troubleshooting (Solución de problemas)
-
-### 1. Error: `window.__opencut is undefined`
+### 1. Error: `window.__opencut is undefined` / `Editor not ready after 30000ms`
 **Cause**: You are trying to use the MCP server with the production web app (`opencut.app`).
-**Fix**: You must run the OpenCut editor locally. The production site doesn't expose the internal hooks required for MCP control.
+**Fix**: You must run the patched OpenCut editor locally (`pnpm run patch-editor <path>`). The production site doesn't expose the internal hooks required for MCP control. If the editor fails to compile, check its terminal for module-not-found errors.
+
+### Export notes
+MP4 export forces software H.264 encoding (`--disable-accelerated-video-encode`) because the Windows hardware encoder stalls OpenCut's exporter, and runs in Chromium's new headless mode because the legacy headless shell crashes while rendering.
 
 ### 2. Error: `Incompatible React versions`
 **Cause**: `react` and `react-dom` versions mismatch in the monorepo.

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import * as fs from "node:fs";
-import { browserManager } from "../browser.js";
+import { browserManager, secondsToTicks, visualDefaults } from "../browser.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 
 type Handler = (args: Record<string, unknown>) => Promise<unknown>;
@@ -89,7 +89,8 @@ export const mediaHandlers: [string, Handler][] = [
       (window as any).__stores?.assets?.getState()?.setActiveTab("media");
     });
     // The hidden input only mounts with the Media view; it is display:none, so wait for "attached" not "visible"
-    const fileInput = page.locator('input[type="file"][accept*="video"], input[type="file"][accept*="image"]').first();
+    // accept is only set when the picker opens, so it can't be used in the selector
+    const fileInput = page.locator('input[type="file"]').first();
     try {
       await fileInput.waitFor({ state: "attached", timeout: 10_000 });
     } catch {
@@ -134,26 +135,21 @@ export const mediaHandlers: [string, Handler][] = [
       trackId: z.string().optional(),
       startTime: z.number().optional(),
     }).parse(args);
-    await browserManager.evaluateWithArg(({ mediaId, trackId, startTime }: any) => {
-      const editor = (window as any).__opencut;
-      const asset = editor.media.getAssets().find((a: any) => a.id === mediaId);
-      if (!asset) throw new Error(`Media asset ${mediaId} not found`);
-      const targetTrackId = trackId ?? editor.timeline.addTrack({ type: asset.type === "audio" ? "audio" : "video" });
-      editor.timeline.insertElement({
-        element: {
-          id: crypto.randomUUID(),
-          type: asset.type,
-          name: asset.name,
-          mediaId: asset.id,
-          duration: asset.duration ?? 5,
-          startTime: startTime ?? 0,
-          trimStart: 0,
-          trimEnd: asset.duration ?? 5,
-        },
-        placement: { mode: "explicit", trackId: targetTrackId },
-      });
-    }, { mediaId, trackId, startTime });
-    return { success: true };
+    const asset = await browserManager.evaluateWithArg((id: string) => {
+      const a = (window as any).__opencut.media.getAssets().find((x: any) => x.id === id);
+      return a ? { id: a.id, name: a.name, type: a.type, duration: a.duration } : null;
+    }, mediaId);
+    if (!asset) throw new Error(`Media asset ${mediaId} not found`);
+    // Mirrors OpenCut's buildElementFromMedia(); asset.duration is in seconds
+    const duration = secondsToTicks(asset.duration ?? 5);
+    const base = { mediaId: asset.id, name: asset.name, duration, startTime: secondsToTicks(startTime ?? 0), trimStart: 0, trimEnd: 0 };
+    const element =
+      asset.type === "audio" ? { ...base, type: "audio", sourceType: "upload", sourceDuration: duration, volume: 0, muted: false }
+      : asset.type === "video" ? { ...base, ...visualDefaults(), type: "video", sourceDuration: duration, muted: false, isSourceAudioEnabled: true }
+      : { ...base, ...visualDefaults(), type: "image" };
+    const placed = await browserManager.insertElement(element, trackId);
+    if (!placed) throw new Error("OpenCut rejected the element (no free space on the target track?)");
+    return { success: true, ...placed };
   }],
 
   ["media_is_loading", async () => {

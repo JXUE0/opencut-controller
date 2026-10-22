@@ -1,4 +1,5 @@
 import { z } from "zod";
+import * as fs from "node:fs";
 import { browserManager, toFrameRate } from "../browser.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 
@@ -17,6 +18,7 @@ export const exportTools: Tool[] = [
         includeAudio: { type: "boolean", description: "Include audio track (default: true)" },
         pollIntervalMs: { type: "number", description: "Polling interval in ms (default: 1000)" },
         timeoutMs: { type: "number", description: "Max wait time in ms (default: 300000)" },
+        outputPath: { type: "string", description: "Absolute path to save the exported video file" },
       },
       required: [],
     },
@@ -67,8 +69,9 @@ export const exportHandlers: [string, Handler][] = [
       includeAudio: z.boolean().optional(),
       pollIntervalMs: z.number().optional(),
       timeoutMs: z.number().optional(),
+      outputPath: z.string().optional(),
     });
-    const { format, quality, fps, includeAudio, pollIntervalMs, timeoutMs } = schema.parse(args);
+    const { format, quality, fps, includeAudio, pollIntervalMs, timeoutMs, outputPath } = schema.parse(args);
 
     // Start export
     await browserManager.evaluateWithArg(({ format, quality, fps, includeAudio }: any) => {
@@ -93,7 +96,19 @@ export const exportHandlers: [string, Handler][] = [
         return (window as any).__opencut.project.getExportState();
       });
       if (!state?.isExporting) {
-        return { success: true, state };
+        const result = state?.result;
+        if (!result?.success) return { success: false, error: result?.error ?? "Export failed", cancelled: result?.cancelled ?? false };
+        if (!outputPath) return { success: true, note: "Pass outputPath to save the file to disk" };
+        // The video lives in the page as an ArrayBuffer; ship it out as base64
+        const b64: string = await browserManager.evaluate(() => {
+          const bytes = new Uint8Array((window as any).__opencut.project.getExportState().result.buffer);
+          let bin = "";
+          for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+          return btoa(bin);
+        });
+        const data = Buffer.from(b64, "base64");
+        fs.writeFileSync(outputPath, data);
+        return { success: true, outputPath, bytes: data.length };
       }
     }
     return { success: false, error: "Export timed out" };

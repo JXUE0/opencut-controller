@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { browserManager } from "../browser.js";
+import { browserManager, timesToSeconds } from "../browser.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 
 type Handler = (args: Record<string, unknown>) => Promise<unknown>;
@@ -7,7 +7,7 @@ type Handler = (args: Record<string, unknown>) => Promise<unknown>;
 export const timelineTracksTools: Tool[] = [
   {
     name: "timeline_track_add",
-    description: "Add a new track to the timeline",
+    description: "Not supported by OpenCut: empty tracks are pruned right after creation. Tracks are created automatically when inserting an element without a trackId.",
     inputSchema: {
       type: "object",
       properties: {
@@ -72,11 +72,9 @@ export const timelineTracksHandlers: [string, Handler][] = [
       type: z.enum(["video", "audio", "text", "sticker", "effect"]),
       index: z.number().optional(),
     });
-    const { type, index } = schema.parse(args);
-    const trackId = await browserManager.evaluateWithArg(({ type, index }: { type: string; index?: number }) => {
-      return (window as any).__opencut.timeline.addTrack({ type, index });
-    }, { type, index });
-    return { success: true, trackId };
+    schema.parse(args);
+    // EditorCore's command reactor removes empty overlay/audio tracks, so addTrack() ids never persist
+    throw new Error("OpenCut removes empty tracks immediately, so a track can't be added on its own. Insert an element without trackId (media_add_to_timeline, text_create, ...) and a track is created for it.");
   }],
 
   ["timeline_track_remove", async (args) => {
@@ -105,7 +103,9 @@ export const timelineTracksHandlers: [string, Handler][] = [
 
   ["timeline_track_list", async () => {
     const tracks = await browserManager.evaluate(() => {
-      return (window as any).__opencut.timeline.getTracks().map((t: any) => ({
+      // OpenCut keeps tracks as SceneTracks { main, overlay[], audio[] }, not a flat list
+      const st = (window as any).__opencut.scenes.getActiveScene().tracks;
+      return [st.main, ...st.overlay, ...st.audio].map((t: any) => ({
         id: t.id,
         type: t.type,
         muted: t.muted,
@@ -135,6 +135,6 @@ export const timelineTracksHandlers: [string, Handler][] = [
         })),
       };
     }, trackId);
-    return { track };
+    return { track: track ? { ...track, elements: track.elements.map(timesToSeconds) } : null };
   }],
 ];

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { browserManager } from "../browser.js";
+import { browserManager, buildTextElement } from "../browser.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 
 type Handler = (args: Record<string, unknown>) => Promise<unknown>;
@@ -144,37 +144,21 @@ export const transcriptionHandlers: [string, Handler][] = [
       y: z.number().optional(),
     }).parse(args);
 
-    await browserManager.evaluateWithArg(({ segments, fontSize, color, y }: any) => {
-      const editor = (window as any).__opencut;
-      const trackId = editor.timeline.addTrack({ type: "text" });
-      for (const seg of segments) {
-        const dur = seg.end - seg.start;
-        editor.timeline.insertElement({
-          element: {
-            id: crypto.randomUUID(),
-            type: "text",
-            name: seg.text.substring(0, 20),
-            content: seg.text,
-            duration: dur,
-            startTime: seg.start,
-            trimStart: 0,
-            trimEnd: dur,
-            fontSize: fontSize ?? 48,
-            fontFamily: "Inter",
-            color: color ?? "#ffffff",
-            textAlign: "center",
-            fontWeight: "bold",
-            fontStyle: "normal",
-            textDecoration: "none",
-            opacity: 1,
-            transform: { x: 0, y: y ?? 400, scaleX: 1, scaleY: 1, rotation: 0 },
-            background: { enabled: true, color: "#000000", cornerRadius: 4, paddingX: 8, paddingY: 4 },
-          },
-          placement: { mode: "explicit", trackId },
-        });
+    // An empty track from addTrack() never reaches the scene, so the first caption creates the track
+    let trackId: string | undefined;
+    const placed = [];
+    for (const seg of segments) {
+      const element = buildTextElement({
+        content: seg.text, startTime: seg.start, duration: seg.end - seg.start,
+        fontSize, color, fontWeight: "bold", y: y ?? 400, background: true,
+      });
+      const result = await browserManager.insertElement(element, trackId);
+      if (result) {
+        trackId ??= result.trackId;
+        placed.push(result.elementId);
       }
-    }, { segments, fontSize, color, y });
-    return { success: true, captionCount: segments.length };
+    }
+    return { success: placed.length === segments.length, trackId, captionCount: placed.length, requested: segments.length };
   }],
 
   ["transcription_get_state", async () => {

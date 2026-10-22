@@ -122,18 +122,13 @@ for (const relPath of editorProviderPaths) {
 	}, [editor]);
 `;
 
-        // Try multiple insertion points
-        const insertionPoints = [
-          "useEditorActions();\n\tuseKeybindingsListener();",
-          "useEditorActions();\nuseKeybindingsListener();",
-          "useEditorActions()",
-          "useKeybindingsListener()",
-        ];
+        // Insert after the whole statement line (works with LF and CRLF files)
+        const insertionPoints = [/^[ \t]*useKeybindingsListener\(\);[ \t]*\r?$/m, /^[ \t]*useEditorActions\(\);[ \t]*\r?$/m];
 
         let inserted = false;
         for (const point of insertionPoints) {
-          if (content.includes(point)) {
-            content = content.replace(point, `${point}\n${exposureLogic}`);
+          if (point.test(content)) {
+            content = content.replace(point, (line) => `${line}\n${exposureLogic}`);
             inserted = true;
             break;
           }
@@ -163,7 +158,7 @@ if (detectedVersion === "legacy") {
   const projectsPagePath = path.join(openCutPath, "apps/web/src/app/projects/page.tsx");
   if (fs.existsSync(projectsPagePath)) {
     let content = fs.readFileSync(projectsPagePath, "utf-8");
-    if (!content.includes("window.__opencut")) {
+    if (!content.includes("__opencut")) {
       console.log("📦 Injecting hooks into projects/page.tsx...");
       const projectExposure = `
 	useEffect(() => {
@@ -194,7 +189,7 @@ for (const relPath of envWebPaths) {
     if (content.includes("z.url()")) {
       console.log(`🛡️ Relaxing environment validation in ${relPath}...`);
       content = content.replace(/z\.url\(\)/g, "z.string().url().optional()");
-      content = content.replace(/DATABASE_URL: z\.string\(\)\.refine\([\s\S]*?\),/g, "DATABASE_URL: z.string().optional(),");
+      content = content.replace(/DATABASE_URL: z\.string\(\)\.refine\([\s\S]*?\r?\n\s*\),/g, "DATABASE_URL: z.string().optional(),");
       content = content.replace(/BETTER_AUTH_SECRET: z\.string\(\),/g, "BETTER_AUTH_SECRET: z.string().optional(),");
       content = content.replace(/UPSTASH_REDIS_REST_TOKEN: z\.string\(\),/g, "UPSTASH_REDIS_REST_TOKEN: z.string().optional(),");
       content = content.replace(/MARBLE_WORKSPACE_KEY: z\.string\(\),/g, "MARBLE_WORKSPACE_KEY: z.string().optional(),");
@@ -217,7 +212,7 @@ if (fs.existsSync(webPackageJsonPath)) {
   const pkg = JSON.parse(fs.readFileSync(webPackageJsonPath, "utf-8"));
   pkg.dependencies.react = "19.2.0";
   pkg.dependencies["react-dom"] = "19.2.0";
-  fs.writeFileSync(webPackageJsonPath, JSON.stringify(pkg, null, 2));
+  fs.writeFileSync(webPackageJsonPath, JSON.stringify(pkg, null, 2) + "\n");
   console.log("✅ React versions set to 19.2.0.");
   patchedAny = true;
 }
@@ -231,21 +226,19 @@ const envPaths = [
   ".env",
 ];
 
-for (const relPath of envPaths) {
-  const fullPath = path.join(openCutPath, relPath);
-  if (!fs.existsSync(fullPath)) {
-    console.log(`📝 Creating default ${relPath}...`);
-    const envContent = `
+// Only create a default when no env file exists at all
+if (!envPaths.some(p => fs.existsSync(path.join(openCutPath, p)))) {
+  const relPath = envPaths[0]!;
+  console.log(`📝 Creating default ${relPath}...`);
+  const envContent = `
 NODE_ENV=development
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
 DATABASE_URL="postgresql://opencut:opencut@localhost:5432/opencut"
 BETTER_AUTH_SECRET=dummy_secret
 `;
-    fs.writeFileSync(fullPath, envContent.trim() + "\n");
-    console.log(`✅ ${relPath} created.`);
-    patchedAny = true;
-    break;
-  }
+  fs.writeFileSync(path.join(openCutPath, relPath), envContent.trim() + "\n");
+  console.log(`✅ ${relPath} created.`);
+  patchedAny = true;
 }
 
 // ============================================================

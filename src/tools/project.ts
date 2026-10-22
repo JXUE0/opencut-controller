@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { browserManager, toFrameRate } from "../browser.js";
+import { browserManager, toFrameRate, secondsToTicks, ticksToSeconds } from "../browser.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 
 type Handler = (args: Record<string, unknown>) => Promise<unknown>;
@@ -170,7 +170,7 @@ export const projectHandlers: [string, Handler][] = [
       if (projects !== null) break;
       await new Promise((r) => setTimeout(r, 300));
     }
-    return { projects: projects ?? [] };
+    return { projects: (projects ?? []).map((p: any) => (typeof p?.duration === "number" ? { ...p, duration: ticksToSeconds(p.duration) } : p)) };
   }],
 
   ["project_get_active", async () => {
@@ -189,7 +189,7 @@ export const projectHandlers: [string, Handler][] = [
         version: p.version,
       };
     });
-    return { project };
+    return { project: project ? { ...project, duration: ticksToSeconds(project.duration) } : null };
   }],
 
   ["project_rename", async (args) => {
@@ -239,7 +239,7 @@ export const projectHandlers: [string, Handler][] = [
     const state = await browserManager.evaluate(() => {
       return (window as any).__opencut.project.getTimelineViewState();
     });
-    return { state };
+    return { state: state ? { ...state, playheadTime: ticksToSeconds(state.playheadTime) } : state };
   }],
 
   ["project_set_timeline_view_state", async (args) => {
@@ -248,7 +248,8 @@ export const projectHandlers: [string, Handler][] = [
       scrollLeft: z.number().optional(),
       playheadTime: z.number().optional(),
     });
-    const viewState = schema.parse(args);
+    const parsed = schema.parse(args);
+    const viewState = { ...parsed, ...(parsed.playheadTime !== undefined ? { playheadTime: secondsToTicks(parsed.playheadTime) } : {}) };
     await browserManager.evaluateWithArg((vs: typeof viewState) => {
       (window as any).__opencut.project.setTimelineViewState({ viewState: vs });
     }, viewState);
@@ -285,7 +286,7 @@ export const projectHandlers: [string, Handler][] = [
     const duration = await browserManager.evaluate(() => {
       return (window as any).__opencut.timeline.getTotalDuration();
     });
-    return { duration };
+    return { duration: ticksToSeconds(duration) };
   }],
 
   ["project_duplicate", async (args) => {
