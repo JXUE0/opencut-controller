@@ -88,8 +88,13 @@ export const mediaHandlers: [string, Handler][] = [
     await page.evaluate(() => {
       (window as any).__stores?.assets?.getState()?.setActiveTab("media");
     });
-    // Find or create the hidden file input
-    const fileInput = page.locator('input[type="file"]').first();
+    // The hidden input only mounts with the Media view; it is display:none, so wait for "attached" not "visible"
+    const fileInput = page.locator('input[type="file"][accept*="video"], input[type="file"][accept*="image"]').first();
+    try {
+      await fileInput.waitFor({ state: "attached", timeout: 10_000 });
+    } catch {
+      throw new Error("Media file input not found — is the editor patched and the Media tab mounted?");
+    }
     await fileInput.setInputFiles(filePath);
     // Wait briefly for upload to process
     await new Promise((r) => setTimeout(r, 2000));

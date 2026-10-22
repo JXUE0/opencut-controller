@@ -449,16 +449,15 @@ async function main() {
     console.error("[opencut-controller] Connected via stdio");
   }
 
-  process.on("SIGINT", async () => {
+  const shutdown = async () => {
     console.error("[opencut-controller] Shutting down...");
-    await browserManager.close();
+    await browserManager.close().catch(() => {});
     process.exit(0);
-  });
-
-  process.on("SIGTERM", async () => {
-    await browserManager.close();
-    process.exit(0);
-  });
+  };
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+  // MCP clients (e.g. Claude Desktop) usually just close stdin instead of signalling
+  if (transportType !== "http") process.stdin.on("close", shutdown);
 }
 
 main().catch((err) => {

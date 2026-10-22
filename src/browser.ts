@@ -1,15 +1,26 @@
-import { chromium, type Browser, type BrowserContext, type Page, type BrowserServer } from "playwright";
+import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 
 export type SafeResult<T> =
   | { ok: true; data: T }
   | { ok: false; error: string };
+
+export type FrameRate = { numerator: number; denominator: number };
+
+/** OpenCut stores fps as a rational FrameRate struct; a bare number corrupts the project (issue #1). */
+export function toFrameRate(fps: number): FrameRate {
+  if (!(fps > 0 && fps <= 240)) throw new Error(`Invalid fps: ${fps}`);
+  if (Number.isInteger(fps)) return { numerator: fps, denominator: 1 };
+  for (const base of [24, 30, 60]) {
+    if (Math.abs(fps - (base * 1000) / 1001) < 0.01) return { numerator: base * 1000, denominator: 1001 };
+  }
+  return { numerator: Math.round(fps * 1000), denominator: 1000 };
+}
 
 const EDITOR_BASE = process.env.OPENCUT_URL ?? "http://localhost:3001";
 const READY_TIMEOUT_MS = 30_000;
 const READY_POLL_MS = 200;
 
 class BrowserManager {
-  private server: BrowserServer | null = null;
   private browser: Browser | null = null;
   private context: BrowserContext | null = null;
   private page: Page | null = null;
@@ -33,12 +44,7 @@ class BrowserManager {
       args: ["--no-sandbox", "--disable-setuid-sandbox"],
     };
 
-    if (process.platform === "win32") {
-      this.server = await chromium.launchServer(launchOpts);
-      this.browser = await chromium.connect(this.server.wsEndpoint());
-    } else {
-      this.browser = await chromium.launch(launchOpts);
-    }
+    this.browser = await chromium.launch(launchOpts);
 
     this.context = await this.browser.newContext();
     this.page = await this.context.newPage();
@@ -186,9 +192,8 @@ class BrowserManager {
 
   async close(): Promise<void> {
     await this.browser?.close();
-    await this.server?.close();
     this.browser = null;
-    this.server = null;
+    this.launchPromise = null;
     this.context = null;
     this.page = null;
     this.currentProjectId = null;

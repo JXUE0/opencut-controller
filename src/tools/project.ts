@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { browserManager } from "../browser.js";
+import { browserManager, toFrameRate } from "../browser.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 
 type Handler = (args: Record<string, unknown>) => Promise<unknown>;
@@ -210,7 +210,8 @@ export const projectHandlers: [string, Handler][] = [
       backgroundColor: z.string().optional(),
       blurIntensity: z.number().optional(),
     });
-    const parsed = schema.parse(args);
+    const raw = schema.parse(args);
+    const parsed = { ...raw, fps: raw.fps === undefined ? undefined : toFrameRate(raw.fps) };
     await browserManager.evaluateWithArg((p: typeof parsed) => {
       const settings: any = {};
       if (p.fps !== undefined) settings.fps = p.fps;

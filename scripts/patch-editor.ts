@@ -19,6 +19,8 @@ if (!fs.existsSync(openCutPath)) {
 console.log(`🎬 Patching OpenCut at: ${openCutPath}`);
 console.log("");
 
+const PATCH_MARKER = "// opencut-controller:patched";
+
 let patchedAny = false;
 let detectedVersion: "legacy" | "modern" | "unknown" = "unknown";
 
@@ -27,7 +29,6 @@ function detectVersion(): "legacy" | "modern" | "unknown" {
   // Modern: Vite + TanStack Router (no app/ directory, has routes/ + components/ui/)
   const modernIndicators = [
     "apps/web/src/routes/__root.tsx",
-    "apps/web/src/components/ui/button.tsx",
     "apps/web/vite.config.ts",
   ];
   // Legacy: Next.js App Router (has app/ directory)
@@ -35,6 +36,8 @@ function detectVersion(): "legacy" | "modern" | "unknown" {
     "apps/web/src/app/layout.tsx",
     "apps/web/src/components/providers/editor-provider.tsx",
     "apps/web/next.config.js",
+    "apps/web/next.config.ts",
+    "apps/web/next.config.mjs",
   ];
 
   const modernExists = modernIndicators.some(f => fs.existsSync(path.join(openCutPath, f)));
@@ -42,7 +45,7 @@ function detectVersion(): "legacy" | "modern" | "unknown" {
 
   if (modernExists && !legacyExists) return "modern";
   if (legacyExists && !modernExists) return "legacy";
-  if (modernExists && legacyExists) return "modern"; // prefer modern if both exist
+  if (modernExists && legacyExists) return "legacy"; // a Next.js config means App Router, whatever else is present
   return "unknown";
 }
 
@@ -79,63 +82,44 @@ for (const relPath of editorProviderPaths) {
   if (fs.existsSync(fullPath)) {
     let content = fs.readFileSync(fullPath, "utf-8");
 
-    if (!content.includes("window.__opencut")) {
+    if (!content.includes(PATCH_MARKER) && !content.includes("window.__opencut")) {
       console.log(`📦 Injecting control hooks into ${relPath}...`);
 
       // Detect import style and add exposure logic
       if (content.includes("useEditorActions") || content.includes("useTimelineStore")) {
         // Legacy-style: has editor object and stores
-        const imports = `import { usePanelStore } from "@/editor/panel-store";
-import { usePreviewStore } from "@/preview/preview-store";
-import { useSoundsStore } from "@/sounds/sounds-store";
-import { useStickersStore } from "@/stickers/stickers-store";
-import { useAssetsPanelStore } from "@/components/editor/panels/assets/assets-panel-store";
-import { usePropertiesStore } from "@/components/editor/panels/properties/stores/properties-store";
-import { useKeybindingsStore } from "@/keybindings/keybindings-store";
-import { useTimelineStore } from "@/timeline/timeline-store";
-`;
+        const stores: [string, string, string][] = [
+          ["panel", "usePanelStore", "@/editor/panel-store"],
+          ["preview", "usePreviewStore", "@/preview/preview-store"],
+          ["sounds", "useSoundsStore", "@/sounds/sounds-store"],
+          ["stickers", "useStickersStore", "@/stickers/stickers-store"],
+          ["assets", "useAssetsPanelStore", "@/components/editor/panels/assets/assets-panel-store"],
+          ["properties", "usePropertiesStore", "@/components/editor/panels/properties/stores/properties-store"],
+          ["keybindings", "useKeybindingsStore", "@/actions/keybindings-store"],
+          ["timeline", "useTimelineStore", "@/timeline/timeline-store"],
+        ];
+        // Skip stores the file already imports to avoid duplicate identifiers
+        const missing = stores.filter(([, hook]) => !new RegExp(`import\\s*{[^}]*\\b${hook}\\b`).test(content));
+        const imports = missing.map(([, hook, mod]) => `import { ${hook} } from "${mod}";\n`).join("");
+        if (!/import\s*{[^}]*\buseEffect\b[^}]*}\s*from\s*"react"/.test(content)) {
+          content = `import { useEffect } from "react";\n` + content;
+        }
 
         // Try to find a good place to insert imports
         if (content.includes('} from "@/services/renderer/gpu-renderer";')) {
           content = content.replace('} from "@/services/renderer/gpu-renderer";', `} from "@/services/renderer/gpu-renderer";\n${imports}`);
         } else if (content.includes("import { useEditorActions }")) {
-          content = content.replace("import { useEditorActions }", `${imports}\nimport { useEditorActions }`);
+          content = content.replace("import { useEditorActions }", `${imports}import { useEditorActions }`);
         }
 
+        // Expose the store hooks themselves (zustand), not their state: tools call __stores.x.getState()
         const exposureLogic = `
-	const panel = usePanelStore();
-	const preview = usePreviewStore();
-	const sounds = useSoundsStore();
-	const stickers = useStickersStore();
-	const assets = useAssetsPanelStore();
-	const properties = usePropertiesStore();
-	const keybindings = useKeybindingsStore();
-	const timeline = useTimelineStore();
-
+	${PATCH_MARKER}
 	useEffect(() => {
 		const w = window as any;
 		w.__opencut = editor;
-		w.__stores = {
-			panel,
-			preview,
-			sounds,
-			stickers,
-			assets,
-			properties,
-			keybindings,
-			timeline,
-		};
-	}, [
-		editor,
-		panel,
-		preview,
-		sounds,
-		stickers,
-		assets,
-		properties,
-		keybindings,
-		timeline,
-	]);
+		w.__stores = { ${stores.map(([key, hook]) => `${key}: ${hook}`).join(", ")} };
+	}, [editor]);
 `;
 
         // Try multiple insertion points
