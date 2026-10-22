@@ -12,6 +12,10 @@ import {
   GetPromptRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { browserManager } from "./browser.js";
+import { createRequire } from "node:module";
+
+// dist/index.js and src/index.ts both sit one level below package.json
+const PKG_VERSION: string = createRequire(import.meta.url)("../package.json").version;
 
 import { projectTools, projectHandlers } from "./tools/project.js";
 import { scenesTools, scenesHandlers } from "./tools/scenes.js";
@@ -237,7 +241,7 @@ async function main() {
   console.error(`[opencut-controller] Starting server with ${allTools.length} tools (transport: ${transportType})`);
 
   const server = new Server(
-    { name: "opencut-controller", version: "0.1.0" },
+    { name: "opencut-controller", version: PKG_VERSION },
     {
       capabilities: {
         tools: {},
@@ -324,7 +328,7 @@ async function main() {
 
     function createRequestServer() {
       const requestServer = new Server(
-        { name: "opencut-controller", version: "0.1.0" },
+        { name: "opencut-controller", version: PKG_VERSION },
         {
           capabilities: {
             tools: {},
